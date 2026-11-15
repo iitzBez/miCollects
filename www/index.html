@@ -412,6 +412,12 @@ function extractProduct(html, pageUrl) {
   const metaAll = k => [...doc.querySelectorAll(sel(k))].map(m => m.getAttribute("content")).filter(Boolean);
   const itemprop = k => { const el = doc.querySelector(`[itemprop="${k}"]`); return el ? (el.getAttribute("content") || el.textContent || "").trim() : ""; };
   const text = s => { if (s == null || s === "") return ""; const d = new DOMParser().parseFromString(String(s), "text/html"); return (d.body.textContent || "").replace(/\s+/g, " ").trim(); };
+  const firstLine = s => {
+    if (s == null || s === "") return "";
+    const d = new DOMParser().parseFromString(String(s), "text/html");
+    const lines = (d.body.textContent || "").split(/\r?\n+/).map(x => x.replace(/\s+/g, " ").trim()).filter(Boolean);
+    return lines[0] || "";
+  };
   const nameOf = v => !v ? "" : typeof v === "string" ? v : Array.isArray(v) ? nameOf(v[0]) : String(v.name || "");
   const types = n => [].concat((n && n["@type"]) || []).map(String);
 
@@ -423,7 +429,14 @@ function extractProduct(html, pageUrl) {
     if (n["@graph"]) walk(n["@graph"]);
     if (n.mainEntity) walk(n.mainEntity);
   };
-  doc.querySelectorAll('script[type="application/ld+json"]').forEach(s => { try { walk(JSON.parse(s.textContent.trim())); } catch (e) {} });
+  doc.querySelectorAll('script[type="application/ld+json"]').forEach(s => {
+    const raw = s.textContent.trim();
+    try { walk(JSON.parse(raw)); }
+    catch (e) {
+      /* Some storefronts inject stray markup into this block, which breaks JSON.parse; strip tags and retry. */
+      try { walk(JSON.parse(raw.replace(/<[^>]*>/g, ""))); } catch (e2) {}
+    }
+  });
   const product = nodes.find(n => types(n).some(t => /^(Product|ProductGroup|IndividualProduct|ProductModel|Book)$/i.test(t))) || {};
   const crumbs = nodes.find(n => types(n).includes("BreadcrumbList"));
 
@@ -433,20 +446,34 @@ function extractProduct(html, pageUrl) {
     const parts = name.split(/\s+[|–—-]\s+/);
     if (parts.length > 1 && parts[0].length > 3) name = parts[0];
   }
-  const description = text(product.description || meta("og:description", "description", "twitter:description")).slice(0, 1500);
+  const description = (firstLine(product.description) || text(meta("og:description", "description", "twitter:description"))).slice(0, 1500);
   const brand = text(nameOf(product.brand) || nameOf(product.manufacturer) || meta("product:brand", "og:brand", "brand") || itemprop("brand"));
 
   let category = text(nameOf(product.category) || meta("product:category", "og:category", "category"));
   if (/[>/]/.test(category)) category = category.split(/\s*[>/]\s*/).filter(Boolean).pop() || "";
-  if (!category && crumbs) {
-    const items = [].concat(crumbs.itemListElement || [])
-      .sort((a, b) => (+a.position || 0) - (+b.position || 0))
-      .map(i => text((i.item && typeof i.item === "object" ? i.item.name : "") || i.name || ""))
-      .filter(n => n && !/^home$/i.test(n));
+  if (!category) {
+    let items = [];
+    if (crumbs) {
+      items = [].concat(crumbs.itemListElement || [])
+        .sort((a, b) => (+a.position || 0) - (+b.position || 0))
+        .map(i => text((i.item && typeof i.item === "object" ? i.item.name : "") || i.name || ""));
+    }
+    if (!items.length) {
+      const nav = doc.querySelector('nav[aria-label="breadcrumb" i], nav[aria-label="breadcrumbs" i], ol.breadcrumb, ul.breadcrumb, .breadcrumbs, [itemtype*="BreadcrumbList" i]');
+      if (nav) items = [...nav.querySelectorAll("li")].map(li => text(li.textContent));
+    }
+    items = items.filter(n => n && !/^home$/i.test(n));
     if (items.length) {
       const last = items[items.length - 1];
       category = norm(last) === norm(name) && items.length > 1 ? items[items.length - 2] : last;
     }
+  }
+
+  /* Strip a leading "Brand - " from the title only once the breadcrumb/category match above has run,
+     since storefronts often repeat the untouched title as the final breadcrumb crumb. */
+  if (brand) {
+    const safeBrand = brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    name = name.replace(new RegExp(`^\\s*${safeBrand}\\s*[:\\-–—|]\\s*`, "i"), "").trim() || name;
   }
 
   let price = null, currency = "";
@@ -476,7 +503,11 @@ function extractProduct(html, pageUrl) {
   doc.querySelectorAll('[itemprop="image"]').forEach(el => addImg(el.getAttribute("content") || el.getAttribute("src") || el.getAttribute("href")));
   const lis = doc.querySelector('link[rel="image_src"]'); if (lis) addImg(lis.getAttribute("href"));
 
-  return { name, description, brand, category, price, currency: String(currency || "").toUpperCase(), images: images.slice(0, MAXP) };
+  /* Listings are assumed new/sealed unless the page itself says otherwise. */
+  const usedHints = /\b(pre[- ]?owned|second[- ]?hand|used|refurbished|open box|no box|loose|as[- ]?is|previously owned|display(?:ed)? only)\b/i;
+  const condition = usedHints.test(`${product.name || ""} ${product.description || ""} ${name} ${description}`) ? "" : "Sealed / new in box";
+
+  return { name, description, brand, category, condition, price, currency: String(currency || "").toUpperCase(), images: images.slice(0, MAXP) };
 }
 
 async function fillFromUrl(it, paintPhotos, dup) {
@@ -497,7 +528,7 @@ async function fillFromUrl(it, paintPhotos, dup) {
     }
     const d = extractProduct(page.html, page.finalUrl);
     const set = (id, v) => { const el = document.getElementById(id); if (el && v != null && v !== "") el.value = v; };
-    set("f-name", d.name); set("f-brand", d.brand); set("f-cat", d.category); set("f-desc", d.description);
+    set("f-name", d.name); set("f-brand", d.brand); set("f-cat", d.category); set("f-desc", d.description); set("f-cond", d.condition);
     if (d.price != null) {
       if (it.list === "owned") { set("f-paid", d.price); set("f-value", d.price); } else set("f-target", d.price);
     }
@@ -509,7 +540,7 @@ async function fillFromUrl(it, paintPhotos, dup) {
     }
     paintPhotos(); dup();
     const filled = [d.name && "name", d.brand && "brand", d.category && "category", d.description && "description",
-      d.price != null && "price", got && `${got} ${got === 1 ? "photo" : "photos"}`].filter(Boolean);
+      d.condition && "condition", d.price != null && "price", got && `${got} ${got === 1 ? "photo" : "photos"}`].filter(Boolean);
     let msg = filled.length ? `Filled in ${listJoin(filled)}. Check the details, then save.` : "Couldn’t find product details on that page. Fill them in yourself.";
     if (d.price != null && d.currency && SYMBOLS[d.currency] !== settings.currency.trim()) msg += ` The price is in ${d.currency}.`;
     hint.textContent = msg;
