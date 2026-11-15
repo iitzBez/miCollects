@@ -492,7 +492,10 @@ const GEMINI_PROMPT = "You are helping catalog a physical collectible (e.g. a di
 async function recognizePhotos(base64s) {
   const key = (settings.geminiKey || "").trim();
   if (!key) throw Object.assign(new Error("No Gemini API key set"), { code: "no-key" });
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`;
+  /* Google retires Gemini model names on a rolling schedule (gemini-2.0-flash shut down, gemini-2.5-flash is next,
+     per ai.google.dev/gemini-api/docs/models) — if this starts 404ing again, that page names the current stable
+     multimodal "flash" model to swap in here. */
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${encodeURIComponent(key)}`;
   const body = JSON.stringify({
     contents: [{ parts: [{ text: GEMINI_PROMPT }, ...base64s.map(data => ({ inline_data: { mime_type: "image/jpeg", data } }))] }],
     generationConfig: { responseMimeType: "application/json" }
@@ -565,6 +568,8 @@ function wireCamera(it, paintPhotos, dup) {
         + (d.search ? ` <a href="https://www.google.com/search?tbm=isch&q=${encodeURIComponent(d.search)}" target="_blank" rel="noopener">Search for a clean photo online</a> if you’d rather use one — paste its page link above and tap Fetch.` : "");
     } catch (e) {
       show(e && e.code === "no-key" ? "Add a free Gemini API key in Settings to auto-fill the details from your photos."
+        : e && e.status === 404 ? "The recognition model isn’t available any more (Google retired it) — this needs a code update."
+        : e && e.status === 400 ? "The recognition service rejected the API key. Check it in Settings."
         : e && e.status ? `The recognition service refused the request (error ${e.status}).`
         : "Couldn’t reach the recognition service. Check your connection.");
       doneBtn.disabled = false; doneBtn.textContent = "Recognise photos";
