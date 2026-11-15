@@ -49,11 +49,11 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .icon-btn svg{width:20px;height:20px}
 
 /* Toolbar */
-.toolbar{display:flex;gap:8px;padding:10px 16px 4px;max-width:1100px;margin:0 auto}
-.search{flex:1;position:relative}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:10px 16px 4px;max-width:1100px;margin:0 auto}
+.search{flex:1 1 100%;position:relative}
 .search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--muted);pointer-events:none}
 .search input{width:100%;height:44px;border-radius:12px;border:1px solid transparent;background:var(--sunk);padding:0 12px 0 38px}
-.sort{height:44px;border-radius:12px;border:1px solid transparent;background:var(--sunk);padding:0 10px;max-width:42%}
+.sort{height:44px;border-radius:12px;border:1px solid transparent;background:var(--sunk);padding:0 10px;flex:1 1 0;min-width:0}
 .chips{display:flex;gap:8px;overflow-x:auto;padding:8px 16px 4px;scrollbar-width:none;max-width:1100px;margin:0 auto}
 .chips::-webkit-scrollbar{display:none}
 .chip{flex:none;height:34px;padding:0 14px;border-radius:17px;border:1px solid var(--line);background:transparent;cursor:pointer;font-size:14px;white-space:nowrap}
@@ -81,6 +81,9 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .empty{grid-column:1/-1;text-align:center;padding:48px 16px;color:var(--muted)}
 .empty h2{font:700 22px/1.2 var(--display);color:var(--ink);margin:0 0 6px}
 .empty p{margin:0 auto 18px;max-width:34ch}
+.group-head{grid-column:1/-1;display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:14px 2px 2px;padding-top:14px;border-top:1px solid var(--line);font:700 12px/1.2 var(--display);text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.group-head:first-child{margin-top:0;padding-top:0;border-top:0}
+.group-count{font-weight:700;background:var(--sunk);border-radius:9px;padding:1px 7px;font-size:11px;text-transform:none;letter-spacing:0}
 
 /* Bottom nav + add button */
 .nav{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom,0px);z-index:5}
@@ -161,6 +164,8 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
   </label>
   <label class="sr" for="sort">Sort by</label>
   <select id="sort" class="sort"></select>
+  <label class="sr" for="group">Group by</label>
+  <select id="group" class="sort"></select>
 </div>
 <div class="chips" id="chips" role="toolbar" aria-label="Filter by category"></div>
 
@@ -217,7 +222,7 @@ const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const money = n => settings.currency + nf.format(+n || 0);
 
 /* ---------- State ---------- */
-const state = { tab: "owned", q: "", cat: "All", sort: "recent", items: [] };
+const state = { tab: "owned", q: "", cat: "All", sort: "recent", group: "none", items: [] };
 const PRI = { 3: "High", 2: "Medium", 1: "Low" };
 const CONDITIONS = ["", "Sealed / new in box", "Mint", "Near mint", "Excellent", "Good", "Fair", "Poor"];
 const price = i => i.list === "owned" ? (+i.value || 0) * (+i.qty || 1) : (+i.target || 0);
@@ -257,6 +262,26 @@ function card(i) {
     </div></div>`;
 }
 
+const UNGROUPED = /^(uncategorised|no brand|no series|not set)$/i;
+function groupLabel(i, g) {
+  if (g === "category") return i.category || "Uncategorised";
+  if (g === "brand") return i.brand || "No brand";
+  if (g === "series") return i.series || "No series";
+  if (g === "condition") return i.condition || "Not set";
+  if (g === "priority") return PRI[i.priority || 2] || "Medium";
+  if (g === "name") { const c = (String(i.name || "").trim()[0] || "").toUpperCase(); return /[A-Z]/.test(c) ? c : "#"; }
+  return "";
+}
+function groupedHtml(list, g) {
+  const buckets = new Map();
+  for (const i of list) { const k = groupLabel(i, g); if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(i); }
+  let keys = [...buckets.keys()];
+  if (g === "priority") { const rank = { High: 0, Medium: 1, Low: 2 }; keys.sort((a, b) => (rank[a] ?? 9) - (rank[b] ?? 9)); }
+  else keys.sort((a, b) => (UNGROUPED.test(a) || a === "#") === (UNGROUPED.test(b) || b === "#")
+    ? a.localeCompare(b) : (UNGROUPED.test(a) || a === "#") ? 1 : -1);
+  return keys.map(k => `<h2 class="group-head">${esc(k)}<span class="group-count">${buckets.get(k).length}</span></h2>${buckets.get(k).map(card).join("")}`).join("");
+}
+
 function render() {
   const owned = state.tab === "owned";
   const tabItems = state.items.filter(i => i.list === state.tab);
@@ -281,6 +306,11 @@ function render() {
   if (!sorts.some(s => s[0] === state.sort)) state.sort = sorts[0][0];
   $("#sort").innerHTML = sorts.map(([v, l]) => `<option value="${v}"${v === state.sort ? " selected" : ""}>${l}</option>`).join("");
 
+  const groups = [["none", "Don’t group"], ["category", "Category"], ["brand", "Brand"], ["series", "Series"],
+    owned ? ["condition", "Condition"] : ["priority", "Priority"], ["name", "Name (A–Z)"]];
+  if (!groups.some(g => g[0] === state.group)) state.group = "none";
+  $("#group").innerHTML = groups.map(([v, l]) => `<option value="${v}"${v === state.group ? " selected" : ""}>${l}</option>`).join("");
+
   const list = visible();
   if (!tabItems.length) {
     $("#grid").innerHTML = `<div class="empty">
@@ -289,6 +319,8 @@ function render() {
       <button class="btn primary" data-add>${owned ? "Add to collection" : "Add to wishlist"}</button></div>`;
   } else if (!list.length) {
     $("#grid").innerHTML = `<div class="empty"><h2>No matches</h2><p>Nothing here matches “${esc(state.q)}”. Try another word or clear the filter.</p></div>`;
+  } else if (state.group !== "none") {
+    $("#grid").innerHTML = groupedHtml(list, state.group);
   } else {
     $("#grid").innerHTML = list.map(card).join("");
   }
@@ -532,6 +564,12 @@ async function fillFromUrl(it, paintPhotos, dup) {
     if (d.price != null) {
       if (it.list === "owned") { set("f-paid", d.price); set("f-value", d.price); } else set("f-target", d.price);
     }
+    let notedUrl = false;
+    const notesEl = $("#f-notes");
+    if (notesEl && !notesEl.value.trim()) {
+      notesEl.value = (it.list === "owned" ? "Bought from: " : "Found at: ") + url;
+      notedUrl = true;
+    }
     let got = 0;
     if (d.images.length) hint.textContent = "Getting photos…";
     for (const src of d.images) {
@@ -540,7 +578,7 @@ async function fillFromUrl(it, paintPhotos, dup) {
     }
     paintPhotos(); dup();
     const filled = [d.name && "name", d.brand && "brand", d.category && "category", d.description && "description",
-      d.condition && "condition", d.price != null && "price", got && `${got} ${got === 1 ? "photo" : "photos"}`].filter(Boolean);
+      d.condition && "condition", d.price != null && "price", notedUrl && "notes", got && `${got} ${got === 1 ? "photo" : "photos"}`].filter(Boolean);
     let msg = filled.length ? `Filled in ${listJoin(filled)}. Check the details, then save.` : "Couldn’t find product details on that page. Fill them in yourself.";
     if (d.price != null && d.currency && SYMBOLS[d.currency] !== settings.currency.trim()) msg += ` The price is in ${d.currency}.`;
     hint.textContent = msg;
@@ -790,6 +828,7 @@ $("#grid").addEventListener("keydown", e => {
 $("#chips").addEventListener("click", e => { const b = e.target.closest("[data-cat]"); if (b) { state.cat = b.dataset.cat; render(); } });
 $("#q").addEventListener("input", e => { state.q = e.target.value; render(); });
 $("#sort").addEventListener("change", e => { state.sort = e.target.value; render(); });
+$("#group").addEventListener("change", e => { state.group = e.target.value; render(); });
 document.querySelectorAll(".nav button").forEach(b => b.addEventListener("click", () => {
   if (state.tab === b.dataset.tab) return;
   state.tab = b.dataset.tab; state.cat = "All"; render(); scrollTo({ top: 0 });
