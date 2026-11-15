@@ -1,0 +1,10 @@
+{
+  "appId": "za.micollects.app",
+  "appName": "miCollects",
+  "webDir": "www",
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}
