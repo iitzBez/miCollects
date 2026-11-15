@@ -150,9 +150,12 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .thumb.add{display:grid;place-items:center;border:2px dashed var(--line);color:var(--muted);font-size:26px;cursor:pointer}
 .link{border:0;background:none;color:var(--danger);padding:4px 0 10px;cursor:pointer;font-size:14px;font-weight:600}
 .actions{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap}
-.btn{min-height:48px;padding:0 20px;border-radius:12px;font-weight:650;cursor:pointer;border:1px solid transparent;display:inline-flex;align-items:center;justify-content:center}
+.btn{min-height:48px;padding:0 20px;border-radius:12px;font-weight:650;cursor:pointer;border:1px solid transparent;display:inline-flex;align-items:center;justify-content:center;gap:8px}
 .btn.primary{background:var(--brass);color:var(--brass-ink);flex:1}
 .btn.ghost{background:transparent;border-color:var(--line)}
+.btn svg{width:18px;height:18px;flex:none}
+.cam-row{display:flex;gap:8px;margin-top:10px}
+.cam-row .btn{flex:1}
 .btn.danger{background:transparent;color:var(--danger);border-color:var(--line)}
 .btn.danger.armed{background:var(--danger);color:#fff;border-color:var(--danger)}
 .more{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
@@ -246,7 +249,7 @@ const store = {
   async clear() { if (!this.db) { this.mem.clear(); return; } await this.req(this.os("readwrite").clear()); }
 };
 
-const settings = { currency: "R", layout: "grid2" };
+const settings = { currency: "R", layout: "grid2", geminiKey: "" };
 try { Object.assign(settings, JSON.parse(localStorage.getItem("cabinet-settings") || "{}")); } catch (e) {}
 function saveSettings() { try { localStorage.setItem("cabinet-settings", JSON.stringify(settings)); } catch (e) {} }
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
@@ -471,6 +474,104 @@ async function fetchImage(src) {
   return compress(await r.blob());
 }
 
+/* ---------- Add using photos (Gemini vision) ---------- */
+const CAM_MAX = 3;
+const GEMINI_PROMPT = "You are helping catalog a physical collectible (e.g. a diecast car, action figure, trading "
+  + "card, comic, toy, model kit) from photos someone just took of their own item. There may be up to three photos: "
+  + "typically the item itself, then the back of it, then a price tag or receipt — but treat them as photos of the "
+  + "same single item regardless of what each one shows. Identify the item as specifically as you can, and read any "
+  + "price tag or sticker if one is visible. Reply with ONLY a compact JSON object (no markdown, no commentary) with "
+  + "exactly these keys: name (the specific product/item name, without the brand), brand (manufacturer or brand "
+  + "name, empty string if unclear), category (a short general category like \"Diecast Cars\", \"Trading Cards\" or "
+  + "\"Action Figures\", empty string if unclear), description (one short sentence describing it), price (the "
+  + "numeric price read from a tag/sticker/receipt if one of the photos shows one, otherwise null — a number only, "
+  + "no currency symbol), search (a short, specific phrase someone could use to search for a clean product photo of "
+  + "this exact item online, combining brand and name). If you cannot identify the item at all, return the text "
+  + "fields as empty strings and price as null.";
+
+async function recognizePhotos(base64s) {
+  const key = (settings.geminiKey || "").trim();
+  if (!key) throw Object.assign(new Error("No Gemini API key set"), { code: "no-key" });
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`;
+  const body = JSON.stringify({
+    contents: [{ parts: [{ text: GEMINI_PROMPT }, ...base64s.map(data => ({ inline_data: { mime_type: "image/jpeg", data } }))] }],
+    generationConfig: { responseMimeType: "application/json" }
+  });
+  const H = nativeHttp();
+  let data;
+  if (H) {
+    const r = await H.post({ url, headers: { "Content-Type": "application/json" }, data: body, connectTimeout: 20000, readTimeout: 30000 });
+    if (r.status >= 400) throw Object.assign(new Error("status"), { status: r.status });
+    data = typeof r.data === "string" ? JSON.parse(r.data) : r.data;
+  } else {
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    if (!r.ok) throw Object.assign(new Error("status"), { status: r.status });
+    data = await r.json();
+  }
+  const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+  const raw = parts.map(p => p.text || "").join("").trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
+  if (!raw) throw new Error("empty");
+  const parsed = JSON.parse(raw);
+  const str = v => String(v ?? "").trim();
+  return {
+    name: str(parsed.name), brand: str(parsed.brand), category: str(parsed.category),
+    description: str(parsed.description).slice(0, 1500), search: str(parsed.search),
+    price: parsePrice(parsed.price)
+  };
+}
+
+/* One photo per tap (cover photo first, then back/price-tag shots appended), up to CAM_MAX;
+   recognition runs on demand across every photo taken in this batch. */
+function wireCamera(it, paintPhotos, dup) {
+  const camBatch = [];
+  const btn = $("#camBtn"), doneBtn = $("#camDoneBtn"), hint = $("#camHint");
+  const show = msg => { hint.hidden = false; hint.textContent = msg; };
+
+  btn.addEventListener("click", async () => {
+    const P = window.Capacitor && window.Capacitor.Plugins;
+    if (!P || !P.Camera) { show("Taking a picture only works in the Android app, not this preview."); return; }
+    btn.disabled = true;
+    try {
+      const shot = await P.Camera.getPhoto({ quality: 80, resultType: "base64", source: "CAMERA", saveToGallery: false });
+      if (!shot || !shot.base64String) return;
+      let compressed;
+      try { compressed = await compressSrc(`data:image/${shot.format || "jpeg"};base64,${shot.base64String}`); }
+      catch (e) { show(e.message || "That photo couldn’t be used."); return; }
+      if (camBatch.length === 0) photos.unshift(compressed); else if (photos.length < MAXP) photos.push(compressed);
+      camBatch.push(compressed);
+      paintPhotos();
+      doneBtn.hidden = false; doneBtn.disabled = false; doneBtn.textContent = "Recognise photos";
+      if (camBatch.length >= CAM_MAX) { btn.hidden = true; show(`Photo ${camBatch.length} of ${CAM_MAX} added. Tap Recognise to fill in the details.`); }
+      else { btn.textContent = "Add Another Photo"; show(`Photo ${camBatch.length} of ${CAM_MAX} added — add the back or a price tag, or tap Recognise to fill in details now.`); }
+    } catch (e) { if (!/cancel/i.test(String(e && e.message))) show("Couldn’t open the camera."); }
+    finally { btn.disabled = false; }
+  });
+
+  doneBtn.addEventListener("click", async () => {
+    if (!camBatch.length) return;
+    if (!(settings.geminiKey || "").trim()) { show("Add a free Gemini API key in Settings to auto-fill the details from your photos."); return; }
+    btn.disabled = true; doneBtn.disabled = true; doneBtn.textContent = "Recognising…"; show("Looking at the photos…");
+    try {
+      const d = await recognizePhotos(camBatch.map(p => p.split(",")[1]));
+      const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+      set("f-name", d.name); set("f-brand", d.brand); set("f-cat", d.category); set("f-desc", d.description);
+      if (d.price != null) { if (it.list === "owned") { set("f-paid", d.price); set("f-value", d.price); } else set("f-target", d.price); }
+      dup();
+      const filled = [d.name && "name", d.brand && "brand", d.category && "category", d.description && "description", d.price != null && "price"].filter(Boolean);
+      if (!filled.length) { show("Couldn’t make out what this is from the photos. Fill in the details yourself."); doneBtn.disabled = false; doneBtn.textContent = "Recognise photos"; return; }
+      btn.hidden = true; doneBtn.hidden = true;
+      hint.hidden = false;
+      hint.innerHTML = `Filled in ${esc(listJoin(filled))} from your photos. Check the details, then save.`
+        + (d.search ? ` <a href="https://www.google.com/search?tbm=isch&q=${encodeURIComponent(d.search)}" target="_blank" rel="noopener">Search for a clean photo online</a> if you’d rather use one — paste its page link above and tap Fetch.` : "");
+    } catch (e) {
+      show(e && e.code === "no-key" ? "Add a free Gemini API key in Settings to auto-fill the details from your photos."
+        : e && e.status ? `The recognition service refused the request (error ${e.status}).`
+        : "Couldn’t reach the recognition service. Check your connection.");
+      doneBtn.disabled = false; doneBtn.textContent = "Recognise photos";
+    } finally { btn.disabled = false; }
+  });
+}
+
 /* Reads product data from structured data (JSON-LD), Open Graph and microdata tags. */
 function extractProduct(html, pageUrl) {
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -652,6 +753,14 @@ function openForm(item, convert) {
         <button type="button" class="btn primary" id="urlBtn">Fetch</button>
       </div>
       <p class="hint" id="urlHint">${it.url && !isNew ? `<a href="${val(it.url)}" target="_blank" rel="noopener">Open listing</a>` : "Paste a link from an online shop to fill in the details automatically."}</p>
+      <div class="cam-row">
+        <button type="button" class="btn ghost" id="camBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l2-2h6l2 2h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
+          Take a Picture
+        </button>
+        <button type="button" class="btn ghost" id="camDoneBtn" hidden>Recognise photos</button>
+      </div>
+      <p class="hint" id="camHint" hidden></p>
     </div>
     <div class="photo-main" id="photoMain"></div>
     <div class="thumbs" id="thumbs"></div>
@@ -736,6 +845,7 @@ function openForm(item, convert) {
       : "This is on your wishlist. Saving here won’t remove it from there.";
   };
   $("#f-name").addEventListener("input", dup); dup();
+  wireCamera(it, paintPhotos, dup);
 
   /* Custom category suggestions (not a native <datalist>: Android WebView mispositions its
      popup when the input sits inside this scrolling, animated bottom sheet). */
@@ -817,6 +927,10 @@ function openSettings() {
     <h2 id="sheetTitle">Settings</h2>
     <div class="field"><label for="s-cur">Currency symbol</label>
       <input id="s-cur" value="${esc(settings.currency)}" maxlength="4" autocomplete="off"></div>
+    <h3>Photo recognition</h3>
+    <p class="hint">To auto-fill details from a photo (Take a Picture), paste in a free Gemini API key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Without one, photos are still added, just not recognised.</p>
+    <div class="field"><label for="s-gemini">Gemini API key</label>
+      <input id="s-gemini" type="password" value="${esc(settings.geminiKey)}" placeholder="Paste your API key" autocomplete="off"></div>
     <h3>Backup</h3>
     <p class="hint">Your items are stored only on this phone. Export a backup now and then, and before you uninstall or switch phones.</p>
     <div class="actions">
@@ -828,6 +942,7 @@ function openSettings() {
     <div class="more"><button class="btn danger" id="wipeBtn">Delete everything</button></div>
     <div class="actions"><button class="btn primary" id="sDone">Done</button></div>`;
   $("#s-cur").addEventListener("input", e => { settings.currency = e.target.value; saveSettings(); render(); });
+  $("#s-gemini").addEventListener("input", e => { settings.geminiKey = e.target.value.trim(); saveSettings(); });
   $("#expBtn").addEventListener("click", exportBackup);
   $("#impIn").addEventListener("change", importBackup);
   $("#sDone").addEventListener("click", closeSheet);
@@ -873,7 +988,7 @@ async function importBackup(e) {
       if (existing && (existing.updated || 0) > (it.updated || 0)) continue;
       await store.put(it); n++;
     }
-    if (parsed.settings && parsed.settings.currency) { settings.currency = parsed.settings.currency; saveSettings(); }
+    if (parsed.settings && typeof parsed.settings === "object") { Object.assign(settings, parsed.settings); saveSettings(); }
     state.items = await store.all();
     closeSheet(); render();
     toast(n ? `Imported ${n} ${n === 1 ? "item" : "items"}` : "Nothing new in that backup");
