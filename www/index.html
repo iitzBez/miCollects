@@ -236,6 +236,9 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 .welcome-form{text-align:left}
 .welcome-form h2{font:700 22px/1.2 var(--display);margin:0 0 4px;text-align:center}
 .welcome .btn{width:100%}
+.local-row{display:flex;align-items:center;justify-content:center;gap:6px}
+.hint-btn{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);background:none;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;display:grid;place-items:center;flex:none;padding:0}
+#wLocalHint{text-align:center}
 @media (prefers-reduced-motion:reduce){.welcome-logo,.welcome-choices,.welcome-form{animation:none;opacity:1}}
 </style>
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-app-compat.js"></script>
@@ -250,7 +253,11 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
   <div class="welcome-choices" id="welcomeChoices" hidden>
     <button type="button" class="btn primary" id="wSignIn">Sign in</button>
     <button type="button" class="btn ghost" id="wSignUp">Create account</button>
-    <button type="button" class="link plain" id="wLocal">Use on this device only</button>
+    <div class="local-row">
+      <button type="button" class="link plain" id="wLocal">Use on this device only</button>
+      <button type="button" class="hint-btn" id="wLocalHintBtn" aria-label="What does this mean?" aria-expanded="false">?</button>
+    </div>
+    <p class="hint" id="wLocalHint" hidden>Everything stays on this phone — no account needed, nothing sent to the cloud. You can still sign in later from Settings to back it up or use it on another device.</p>
   </div>
   <div class="welcome-form" id="welcomeForm" hidden>
     <h2 id="wfTitle">Sign in</h2>
@@ -2100,6 +2107,12 @@ function showWelcome() {
 }
 function finishWelcome() { settings.onboarded = true; saveSettings(); $("#welcome").hidden = true; }
 $("#wLocal").addEventListener("click", finishWelcome);
+$("#wLocalHintBtn").addEventListener("click", () => {
+  const h = $("#wLocalHint");
+  const show = h.hidden;
+  h.hidden = !show;
+  $("#wLocalHintBtn").setAttribute("aria-expanded", String(show));
+});
 $("#wSignIn").addEventListener("click", () => openWelcomeForm("signin"));
 $("#wSignUp").addEventListener("click", () => openWelcomeForm("signup"));
 $("#wfBack").addEventListener("click", () => {
