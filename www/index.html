@@ -885,14 +885,19 @@ function wireSuggest(inputId, listId, values) {
   });
 }
 
-function openForm(item, convert) {
+function openForm(item, convertTo) {
   const isNew = !item;
   const it = item ? { ...item } : { id: uid(), list: state.tab, qty: 1, priority: 2, created: Date.now() };
-  if (convert) {
+  if (convertTo === "owned") {
     it.list = "owned"; it.qty = it.qty || 1;
     if (it.paid == null && it.target) it.paid = it.target;
     if (it.value == null && it.target) it.value = it.target;
+  } else if (convertTo === "wish") {
+    it.list = "wish";
+    if (it.target == null) it.target = it.value != null ? it.value : it.paid;
+    if (it.priority == null) it.priority = 2;
   }
+  const convert = !!convertTo;
   editing = { it, isNew, convert };
   photos = Array.isArray(it.photos) && it.photos.length ? [...it.photos] : (it.photo ? [it.photo] : []);
   const owned = it.list === "owned";
@@ -902,7 +907,8 @@ function openForm(item, convert) {
   const scales = [...new Set(state.items.map(i => i.scale).filter(Boolean))].sort();
   const cur = esc(settings.currency);
   const val = v => esc(v ?? "");
-  const title = convert ? "Add to collection" : isNew ? (owned ? "New collection item" : "New wishlist item") : "Edit item";
+  const title = convertTo === "owned" ? "Add to collection" : convertTo === "wish" ? "Move to wishlist"
+    : isNew ? (owned ? "New collection item" : "New wishlist item") : "Edit item";
 
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">${title}</h2>
@@ -978,11 +984,11 @@ function openForm(item, convert) {
     <div class="field"><label for="f-notes">Notes</label>
       <textarea id="f-notes" rows="3" placeholder="${owned ? "Where you got it, edition, serial number…" : "Where to find it, sellers, what to look out for…"}">${val(it.notes)}</textarea></div>
     <div class="actions">
-      <button class="btn primary" id="saveBtn">${convert ? "Add to collection" : "Save"}</button>
+      <button class="btn primary" id="saveBtn">${convertTo === "owned" ? "Add to collection" : convertTo === "wish" ? "Move to wishlist" : "Save"}</button>
       <button class="btn ghost" id="cancelBtn">Cancel</button>
     </div>
     ${!isNew && !convert ? `<div class="more">
-      ${!owned ? `<button class="btn ghost" id="moveBtn">Move to collection</button>` : ""}
+      ${!owned ? `<button class="btn ghost" id="moveBtn">Move to collection</button>` : `<button class="btn ghost" id="wishBtn">Move to wishlist</button>`}
       <button class="btn danger" id="delBtn">Delete</button></div>` : ""}`;
 
   const paintPhotos = () => {
@@ -1042,7 +1048,8 @@ function openForm(item, convert) {
 
   $("#saveBtn").addEventListener("click", save);
   $("#cancelBtn").addEventListener("click", closeSheet);
-  const mv = $("#moveBtn"); if (mv) mv.addEventListener("click", () => openForm(state.items.find(i => i.id === it.id), true));
+  const mv = $("#moveBtn"); if (mv) mv.addEventListener("click", () => openForm(state.items.find(i => i.id === it.id), "owned"));
+  const wb = $("#wishBtn"); if (wb) wb.addEventListener("click", () => openForm(state.items.find(i => i.id === it.id), "wish"));
   const del = $("#delBtn");
   if (del) del.addEventListener("click", () => armThen(del, "Tap again to delete", async () => {
     await store.del(it.id);
@@ -1074,7 +1081,7 @@ async function save() {
   if (idx >= 0) state.items[idx] = it; else state.items.push(it);
   if (convert || isNew) state.tab = it.list;
   closeSheet(); render();
-  toast(convert ? "Added to your collection" : isNew ? "Saved" : "Changes saved");
+  toast(convert ? (it.list === "owned" ? "Added to your collection" : "Moved to your wishlist") : isNew ? "Saved" : "Changes saved");
   cloudPushItem(it).catch(() => toast("Saved here, but couldn’t sync to the cloud."));
 }
 
@@ -1402,7 +1409,7 @@ async function importBackup(e) {
 $("#grid").addEventListener("click", e => {
   if (e.target.closest("[data-add]")) { openForm(null); return; }
   const got = e.target.closest("[data-got]");
-  if (got) { e.stopPropagation(); openForm(state.items.find(i => i.id === got.dataset.got), true); return; }
+  if (got) { e.stopPropagation(); openForm(state.items.find(i => i.id === got.dataset.got), "owned"); return; }
   const c = e.target.closest(".card");
   if (c) openForm(state.items.find(i => i.id === c.dataset.id));
 });
