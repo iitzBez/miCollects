@@ -58,10 +58,7 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--muted);pointer-events:none}
 .search input{width:100%;height:44px;border-radius:12px;border:1px solid transparent;background:var(--sunk);padding:0 12px 0 38px}
 input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit-search-decoration{-webkit-appearance:none;appearance:none;display:none}
-.icon-select{position:relative;width:38px;height:38px;flex:none;border-radius:10px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;color:var(--muted)}
 .icon-select:first-of-type{margin-left:auto}
-.icon-select svg{width:18px;height:18px;pointer-events:none}
-.icon-select select{position:absolute;inset:0;width:100%;height:100%;opacity:0;border:0;cursor:pointer}
 .layout-bar{display:flex;gap:6px;padding:4px 16px 8px;max-width:1100px;margin:0 auto}
 .lbtn{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;flex:none;color:var(--muted)}
 .lbtn svg{width:18px;height:18px}
@@ -140,6 +137,17 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 @keyframes up{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){.sheet{animation:none}}
 .grab{width:40px;height:4px;border-radius:2px;background:var(--line);margin:4px auto 12px}
+.picker-sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:420px;max-height:80vh;max-height:80dvh;overflow-y:auto;background:var(--surface);border-radius:20px 20px 0 0;padding:8px 10px calc(20px + env(safe-area-inset-bottom,0px));z-index:11;animation:up .22s ease-out}
+@media (prefers-reduced-motion:reduce){.picker-sheet{animation:none}}
+.picker-sheet h2{font:700 18px/1.3 var(--display);letter-spacing:-.01em;margin:0 8px 8px;padding:0 0 14px;border-bottom:1px solid var(--line)}
+.picker-opt{display:flex;align-items:center;gap:12px;width:100%;padding:14px 10px;border:0;background:none;border-radius:12px;font-size:15px;font-weight:600;color:var(--ink);text-align:left;cursor:pointer}
+.picker-opt:active{background:var(--sunk)}
+.picker-opt .dot{width:20px;height:20px;border-radius:50%;border:2px solid var(--line);flex:none;display:grid;place-items:center}
+.picker-opt[aria-checked="true"]{color:var(--brass)}
+.picker-opt[aria-checked="true"] .dot{border-color:var(--brass)}
+.picker-opt[aria-checked="true"] .dot::after{content:"";width:10px;height:10px;border-radius:50%;background:var(--brass)}
+.select-btn{width:100%;min-height:46px;border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:16px;font-family:inherit;text-align:left;color:var(--ink);cursor:pointer}
+.select-btn svg{width:18px;height:18px;color:var(--muted);flex:none}
 .sheet h2{font:700 24px/1.2 var(--display);letter-spacing:-.015em;margin:0 0 14px}
 .sheet h3{font:700 17px/1.3 var(--display);margin:26px 0 8px;padding-top:18px;border-top:1px solid var(--line)}
 .field{margin-bottom:14px;position:relative}
@@ -270,14 +278,12 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
     <input id="q" type="search" placeholder="Search name, series, notes" autocomplete="off">
   </label>
-  <div class="icon-select">
-    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 16V4M8 4 4 8M8 4l4 4"/><path d="M16 8v12m0 0 4-4m-4 4-4-4"/></svg>
-    <select id="sort" aria-label="Sort by"></select>
-  </div>
-  <div class="icon-select">
-    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-    <select id="group" aria-label="Group by"></select>
-  </div>
+  <button type="button" class="lbtn icon-select" id="sortBtn" aria-label="Sort by">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 16V4M8 4 4 8M8 4l4 4"/><path d="M16 8v12m0 0 4-4m-4 4-4-4"/></svg>
+  </button>
+  <button type="button" class="lbtn icon-select" id="groupBtn" aria-label="Group by">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+  </button>
 </div>
 <div class="layout-bar" id="layoutBar" role="group" aria-label="Display layout">
   <button class="lbtn" type="button" data-layout="grid1" aria-label="1 tile per row" aria-pressed="false">
@@ -318,6 +324,13 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
   <div class="grab"></div>
   <div id="sheetBody"></div>
+</section>
+
+<div class="scrim" id="pickerScrim" hidden></div>
+<section class="picker-sheet" id="pickerSheetEl" role="dialog" aria-modal="true" aria-labelledby="pickerTitle" hidden>
+  <div class="grab"></div>
+  <h2 id="pickerTitle"></h2>
+  <div id="pickerOptions" role="radiogroup"></div>
 </section>
 
 <div class="toast" id="toast" role="status" hidden></div>
@@ -388,8 +401,11 @@ if (!LAYOUTS.includes(settings.layout)) settings.layout = "grid2";
 
 /* ---------- State ---------- */
 const state = { tab: "owned", q: "", cat: "All", pillField: "all", pillVal: "All", sort: "recent", group: "none", layout: settings.layout, items: [], selecting: false, selectMode: null, selected: new Set() };
+let sortOptions = [], groupOptions = [];
 const PRI = { 3: "High", 2: "Medium", 1: "Low" };
 const CONDITIONS = ["", "Sealed / new in box", "Mint", "Near mint", "Excellent", "Good", "Fair", "Poor"];
+const THEME_OPTIONS = [["system", "System"], ["light", "Light"], ["dark", "Dark"]];
+const CHEVRON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
 const price = i => i.list === "owned" ? (+i.value || 0) * (+i.qty || 1) : (+i.target || 0);
 const norm = s => String(s || "").trim().toLowerCase();
 
@@ -500,16 +516,14 @@ function render() {
     $("#chips").hidden = pillVals.length <= 1;
   }
 
-  const sorts = owned
+  sortOptions = owned
     ? [["recent", "Recent"], ["name", "Name"], ["value", "Value"]]
     : [["priority", "Priority"], ["recent", "Recent"], ["name", "Name"], ["value", "Price"]];
-  if (!sorts.some(s => s[0] === state.sort)) state.sort = sorts[0][0];
-  $("#sort").innerHTML = sorts.map(([v, l]) => `<option value="${v}"${v === state.sort ? " selected" : ""}>${l}</option>`).join("");
+  if (!sortOptions.some(s => s[0] === state.sort)) state.sort = sortOptions[0][0];
 
-  const groups = [["none", "Don’t group"], ["category", "Category"], ["brand", "Brand"], ["series", "Series"], ["scale", "Scale"],
+  groupOptions = [["none", "Don’t group"], ["category", "Category"], ["brand", "Brand"], ["series", "Series"], ["scale", "Scale"],
     owned ? ["condition", "Condition"] : ["priority", "Priority"], ["name", "Name (A–Z)"]];
-  if (!groups.some(g => g[0] === state.group)) state.group = "none";
-  $("#group").innerHTML = groups.map(([v, l]) => `<option value="${v}"${v === state.group ? " selected" : ""}>${l}</option>`).join("");
+  if (!groupOptions.some(g => g[0] === state.group)) state.group = "none";
 
   const list = visible();
   if (!tabItems.length) {
@@ -587,13 +601,44 @@ function exitSelectModeAndPop() {
   try { if (history.state && history.state.select) history.back(); } catch (e) {}
 }
 
+/* ---------- Picker (replaces native <select> option lists with an in-app styled sheet --
+   Android's native picker dialog can't be restyled via CSS, since it's OS chrome, not page
+   content.) Options are [value, label] pairs; onSelect gets the chosen value as a string. */
+let pickerOpen = false;
+function openPicker(title, options, selectedValue, onSelect) {
+  $("#pickerTitle").textContent = title;
+  $("#pickerOptions").innerHTML = options.map(([v, l]) => `
+    <button type="button" class="picker-opt" role="radio" aria-checked="${String(v) === String(selectedValue)}" data-value="${esc(v)}">
+      <span class="dot" aria-hidden="true"></span>${esc(l)}
+    </button>`).join("");
+  $("#pickerOptions").onclick = e => {
+    const b = e.target.closest(".picker-opt"); if (!b) return;
+    closePicker();
+    onSelect(b.dataset.value);
+  };
+  $("#pickerScrim").hidden = false; $("#pickerSheetEl").hidden = false;
+  if (!pickerOpen) { pickerOpen = true; try { history.pushState({ picker: 1 }, ""); } catch (e) {} }
+}
+function hidePicker() {
+  $("#pickerScrim").hidden = true; $("#pickerSheetEl").hidden = true;
+  pickerOpen = false;
+}
+function closePicker() {
+  if (!pickerOpen) return;
+  hidePicker();
+  try { if (history.state && history.state.picker) history.back(); } catch (e) {}
+}
+
 addEventListener("popstate", () => {
+  if (pickerOpen) { hidePicker(); return; }
   if (state.selecting) { exitSelectMode(); return; }
   if (sheetOpen) hideSheet();
 });
 $("#scrim").addEventListener("click", closeSheet);
+$("#pickerScrim").addEventListener("click", closePicker);
 addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
+  if (pickerOpen) { closePicker(); return; }
   if (state.selecting) { exitSelectModeAndPop(); return; }
   closeSheet();
 });
@@ -1134,7 +1179,7 @@ function openForm(item, convertTo) {
     ${owned ? `
     <div class="row">
       <div class="field"><label for="f-cond">Condition</label>
-        <select id="f-cond">${CONDITIONS.map(c => `<option value="${esc(c)}"${c === (it.condition || "") ? " selected" : ""}>${c || "Not set"}</option>`).join("")}</select></div>
+        <button type="button" class="select-btn" id="f-cond" value="${esc(it.condition || "")}"><span>${esc(it.condition || "Not set")}</span>${CHEVRON_SVG}</button></div>
       <div class="field"><label for="f-qty">Quantity</label>
         <input id="f-qty" type="number" inputmode="numeric" min="1" step="1" value="${val(it.qty || 1)}"></div>
     </div>
@@ -1150,7 +1195,7 @@ function openForm(item, convertTo) {
       <div class="field"><label for="f-target">Target price (${cur})</label>
         <input id="f-target" type="number" inputmode="decimal" min="0" step="any" value="${val(it.target)}"></div>
       <div class="field"><label for="f-pri">Priority</label>
-        <select id="f-pri">${[3, 2, 1].map(p => `<option value="${p}"${p === (+it.priority || 2) ? " selected" : ""}>${PRI[p]}</option>`).join("")}</select></div>
+        <button type="button" class="select-btn" id="f-pri" value="${+it.priority || 2}"><span>${esc(PRI[+it.priority || 2])}</span>${CHEVRON_SVG}</button></div>
     </div>`}
     <div class="field"><label for="f-desc">Description</label>
       <textarea id="f-desc" rows="3" placeholder="What it is, edition, size, features…">${val(it.description)}</textarea></div>
@@ -1222,6 +1267,15 @@ function openForm(item, convertTo) {
   wireSuggest("f-series", "seriesSuggest", seriesList);
   wireSuggest("f-brand", "brandSuggest", brands);
   wireSuggest("f-scale", "scaleSuggest", scales);
+
+  const condBtn = $("#f-cond");
+  if (condBtn) condBtn.addEventListener("click", () => openPicker("Condition", CONDITIONS.map(c => [c, c || "Not set"]), condBtn.value, v => {
+    condBtn.value = v; condBtn.querySelector("span").textContent = v || "Not set";
+  }));
+  const priBtn = $("#f-pri");
+  if (priBtn) priBtn.addEventListener("click", () => openPicker("Priority", [3, 2, 1].map(p => [p, PRI[p]]), priBtn.value, v => {
+    priBtn.value = v; priBtn.querySelector("span").textContent = PRI[v];
+  }));
 
   $("#saveBtn").addEventListener("click", save);
   $("#cancelBtn").addEventListener("click", closeSheet);
@@ -1681,11 +1735,7 @@ function generalTabHtml() {
     <div id="backupOut"></div>
     <h3>App theme</h3>
     <div class="field"><label for="s-theme">Theme</label>
-      <select id="s-theme">
-        <option value="system"${settings.theme === "system" ? " selected" : ""}>System</option>
-        <option value="light"${settings.theme === "light" ? " selected" : ""}>Light</option>
-        <option value="dark"${settings.theme === "dark" ? " selected" : ""}>Dark</option>
-      </select></div>
+      <button type="button" class="select-btn" id="s-theme"><span>${esc((THEME_OPTIONS.find(t => t[0] === settings.theme) || THEME_OPTIONS[0])[1])}</span>${CHEVRON_SVG}</button></div>
     <p class="hint">"System" follows your phone's own light/dark setting.</p>
     <div class="more"><button class="btn danger" id="wipeBtn">Delete everything</button></div>`;
 }
@@ -1793,7 +1843,9 @@ function openSettings() {
     } else if (settingsTab === "general") {
       $("#syncBtn").addEventListener("click", () => cloudPullAll());
       $("#s-cur").addEventListener("input", e => { settings.currency = e.target.value; saveSettings(); render(); cloudPushSettings(); });
-      $("#s-theme").addEventListener("change", e => { settings.theme = e.target.value; saveSettings(); applyTheme(); });
+      $("#s-theme").addEventListener("click", () => openPicker("Theme", THEME_OPTIONS, settings.theme, v => {
+        settings.theme = v; saveSettings(); applyTheme(); openSettings();
+      }));
       $("#expBtn").addEventListener("click", exportBackup);
       $("#impIn").addEventListener("change", importBackup);
       const wipe = $("#wipeBtn");
@@ -1920,8 +1972,8 @@ $("#pillField").addEventListener("click", e => {
   state.pillField = b.dataset.pillfield; state.pillVal = "All"; render();
 });
 $("#q").addEventListener("input", e => { state.q = e.target.value; render(); });
-$("#sort").addEventListener("change", e => { state.sort = e.target.value; render(); });
-$("#group").addEventListener("change", e => { state.group = e.target.value; render(); });
+$("#sortBtn").addEventListener("click", () => openPicker("Sort by", sortOptions, state.sort, v => { state.sort = v; render(); }));
+$("#groupBtn").addEventListener("click", () => openPicker("Group by", groupOptions, state.group, v => { state.group = v; render(); }));
 $("#layoutBar").addEventListener("click", e => {
   const b = e.target.closest("[data-layout]");
   if (b) { state.layout = settings.layout = b.dataset.layout; saveSettings(); render(); cloudPushSettings(); return; }
