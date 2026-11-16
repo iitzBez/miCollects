@@ -35,7 +35,7 @@ header p{margin:0;color:var(--muted);font-size:14px}
 a.card{text-decoration:none;color:inherit;cursor:pointer;transition:border-color .15s,transform .15s}
 a.card:hover,a.card:active{border-color:var(--brass)}
 @media (hover:hover){ a.card:hover{transform:translateY(-2px)} }
-.ph{aspect-ratio:1/1;background:var(--sunk);display:flex;align-items:center;justify-content:center}
+.ph{aspect-ratio:1/1;background:var(--sunk);display:flex;align-items:center;justify-content:center;position:relative}
 .ph img{width:100%;height:100%;object-fit:cover}
 .noph{width:40%;height:40%;border-radius:50%;background:var(--line)}
 .body{padding:10px 12px 12px;display:flex;flex-direction:column;gap:4px;flex:1}
@@ -48,6 +48,8 @@ a.card:hover,a.card:active{border-color:var(--brass)}
 .pri.p2{background:rgba(37,99,235,.12);color:var(--brass)}
 .price{font:800 14px/1 var(--display);color:var(--ink)}
 .buy{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);color:var(--brass);font-weight:700;font-size:13px;text-align:center}
+.cond{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;background:var(--sunk);color:var(--muted)}
+.qty{position:absolute;top:8px;right:8px;background:var(--brass);color:#fff;font-weight:700;font-size:12px;padding:2px 8px;border-radius:10px}
 @media (min-width:560px){ .body{padding:12px 14px 14px} .body h3{font-size:16px} .meta,.desc{font-size:13px} .price{font-size:15px} }
 footer{margin-top:36px;text-align:center;color:var(--muted);font-size:12px}
 footer span{color:var(--brass);font-weight:700}
@@ -56,8 +58,8 @@ footer span{color:var(--brass);font-weight:700}
 <body>
 <div class="wrap">
   <header>
-    <h1>🎁 Wishlist</h1>
-    <p>Here’s what’s on the list — view only, no account or app needed.</p>
+    <h1 id="heading">🎁 Wishlist</h1>
+    <p id="subheading">Here’s what’s on the list — view only, no account or app needed.</p>
   </header>
   <div id="status">Loading wishlist…</div>
   <div id="grid" hidden></div>
@@ -86,19 +88,24 @@ const gridEl = document.getElementById("grid");
 function showStatus(msg) { statusEl.hidden = false; statusEl.textContent = msg; gridEl.hidden = true; }
 
 function cardHtml(it, currency) {
+  const owned = it.list === "owned";
   const meta = [it.brand, it.category, it.scale].filter(Boolean).join(" · ");
-  const price = it.target != null && it.target !== "" ? `${currency}${nf.format(+it.target || 0)}` : "";
+  const priceVal = owned ? it.value : it.target;
+  const price = priceVal != null && priceVal !== "" ? `${currency}${nf.format(+priceVal || 0)}` : "";
+  const badge = owned
+    ? (it.condition ? `<span class="cond">${esc(it.condition)}</span>` : "<span></span>")
+    : `<span class="pri p${it.priority || 2}">${esc(PRI[it.priority || 2] || "Medium priority")}</span>`;
   const link = typeof it.productUrl === "string" && /^https?:\/\//i.test(it.productUrl) ? it.productUrl : null;
   const tag = link ? "a" : "div";
   const openAttrs = link ? ` href="${esc(link)}" target="_blank" rel="noopener"` : "";
   return `<${tag} class="card"${openAttrs}>
-    <div class="ph">${it.photo ? `<img src="${esc(it.photo)}" alt="" loading="lazy">` : `<div class="noph"></div>`}</div>
+    <div class="ph">${it.photo ? `<img src="${esc(it.photo)}" alt="" loading="lazy">` : `<div class="noph"></div>`}${owned && +it.qty > 1 ? `<span class="qty">×${+it.qty}</span>` : ""}</div>
     <div class="body">
       <h3>${esc(it.name || "Untitled")}</h3>
       ${meta ? `<p class="meta">${esc(meta)}</p>` : ""}
       ${it.description ? `<p class="desc">${esc(it.description)}</p>` : ""}
       <div class="foot">
-        <span class="pri p${it.priority || 2}">${esc(PRI[it.priority || 2] || "Medium priority")}</span>
+        ${badge}
         ${price ? `<span class="price">${esc(price)}</span>` : ""}
       </div>
       ${link ? `<div class="buy">Buy now →</div>` : ""}
@@ -112,14 +119,20 @@ async function main() {
   try {
     firebase.initializeApp(firebaseConfig);
     const snap = await firebase.firestore().collection("shares").doc(token).get();
-    if (!snap.exists) { showStatus("This wishlist link isn’t available. It may have been turned off."); return; }
+    if (!snap.exists) { showStatus("This link isn’t available. It may have been turned off."); return; }
     const data = snap.data() || {};
     const items = Array.isArray(data.items) ? data.items : [];
-    if (!items.length) { showStatus("This wishlist is empty right now."); return; }
+    const owned = items.length > 0 && items[0].list === "owned";
+    document.getElementById("heading").textContent = owned ? "📦 Collection" : "🎁 Wishlist";
+    document.getElementById("subheading").textContent = owned
+      ? "Here’s what’s in the collection — view only, no account or app needed."
+      : "Here’s what’s on the list — view only, no account or app needed.";
+    document.title = (owned ? "Collection" : "Wishlist") + " · miCollects";
+    if (!items.length) { showStatus("Nothing shared here right now."); return; }
     gridEl.innerHTML = items.map(it => cardHtml(it, data.currency || "")).join("");
     statusEl.hidden = true; gridEl.hidden = false;
   } catch (e) {
-    showStatus("Couldn’t load this wishlist. Check your connection and try again.");
+    showStatus("Couldn’t load this. Check your connection and try again.");
   }
 }
 main();

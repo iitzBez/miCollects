@@ -61,6 +61,7 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .lbtn{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;flex:none;color:var(--muted)}
 .lbtn svg{width:18px;height:18px}
 .lbtn[aria-pressed="true"]{background:var(--brass);border-color:var(--brass);color:var(--brass-ink)}
+#shareSelectBtn{margin-left:auto;background:var(--brass);border-color:var(--brass);color:var(--brass-ink)}
 .select-bar{display:flex;align-items:center;gap:10px;padding:6px 16px 10px;max-width:1100px;margin:0 auto;flex-wrap:wrap}
 .select-bar .select-count{color:var(--muted);font-size:14px;flex:1}
 .select-bar .select-actions{display:flex;gap:8px}
@@ -364,7 +365,7 @@ function visible() {
 /* ---------- Rendering ---------- */
 function card(i) {
   const wish = i.list === "wish";
-  const selecting = wish && state.selecting;
+  const selecting = state.selecting && i.list === state.tab;
   const selected = selecting && state.selected.has(i.id);
   const first = (String(i.name || "?").trim()[0] || "?").toUpperCase();
   const ph = i.photo ? `<img src="${i.photo}" alt="" loading="lazy">` : `<span class="initial">${esc(first)}</span>`;
@@ -413,7 +414,7 @@ function render() {
   document.querySelectorAll("#layoutBar [data-layout]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.layout === state.layout)));
 
   if (state.selecting) for (const id of [...state.selected]) if (!tabItems.some(i => i.id === id)) state.selected.delete(id);
-  const canBulkShare = !owned && cloudEnabled && !!cloudUser;
+  const canBulkShare = cloudEnabled && !!cloudUser;
   $("#shareSelectBtn").hidden = !canBulkShare;
   $("#layoutBar").hidden = state.selecting;
   $("#selectBar").hidden = !state.selecting;
@@ -943,7 +944,7 @@ function openForm(item, convertTo) {
   const val = v => esc(v ?? "");
   const title = convertTo === "owned" ? "Add to collection" : convertTo === "wish" ? "Move to wishlist"
     : isNew ? (owned ? "New collection item" : "New wishlist item") : "Edit item";
-  const canItemShare = !isNew && !convert && !owned && cloudEnabled && !!cloudUser;
+  const canItemShare = !isNew && !convert && cloudEnabled && !!cloudUser;
 
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">${title}</h2>
@@ -1095,7 +1096,7 @@ function openForm(item, convertTo) {
       btn.disabled = true; const original = btn.textContent; btn.textContent = "Sharing…";
       try {
         await createItemShare(it);
-        await openShareSheet(shareUrl(it.shareToken), it.name || "Wishlist item");
+        await openShareSheet(shareUrl(it.shareToken), it.name || "Item");
         openForm(state.items.find(i => i.id === it.id));
       } catch (e) { hint.textContent = "Couldn’t share: " + authErrorMsg(e); btn.disabled = false; btn.textContent = original; }
     });
@@ -1130,8 +1131,6 @@ async function save() {
     scope: it.scope || currentScope });
   if (it.list === "owned") {
     Object.assign(it, { condition: v("f-cond"), qty: Math.max(1, parseInt(v("f-qty"), 10) || 1), paid: num(v("f-paid")), value: num(v("f-value")) });
-    // No longer a wishlist item -- its public share link (if any) no longer applies.
-    if (it.shareToken) { deleteShareDoc(it.shareToken); it.shareToken = null; }
   } else {
     Object.assign(it, { target: num(v("f-target")), priority: +v("f-pri") || 2 });
   }
@@ -1327,8 +1326,10 @@ async function ensureItemPhotoSynced(it) {
 }
 const shareEntry = it => ({
   name: it.name || "", brand: it.brand || "", category: it.category || "", scale: it.scale || "",
-  description: it.description || "", target: it.target ?? null, priority: it.priority || 2,
-  photo: (it.cloudPhotos && it.cloudPhotos[0]) || null, productUrl: it.productUrl || null
+  description: it.description || "", photo: (it.cloudPhotos && it.cloudPhotos[0]) || null, productUrl: it.productUrl || null,
+  list: it.list === "owned" ? "owned" : "wish",
+  target: it.target ?? null, priority: it.priority || 2,
+  condition: it.condition || "", qty: it.qty || 1, value: it.value ?? it.paid ?? null
 });
 async function pushShareDoc(token, items) {
   await fbDb.collection("shares").doc(token).set({ uid: cloudUser.uid, currency: settings.currency, updated: Date.now(), items });
@@ -1402,10 +1403,14 @@ async function revokeItemShare(it) {
    No "manage this link" UI -- a fresh token each time, same as sharing a photo. */
 async function shareItemsNow(items) {
   for (const it of items) await ensureItemPhotoSynced(it);
-  const sorted = items.slice().sort((a, b) => (b.priority || 2) - (a.priority || 2) || (a.name || "").localeCompare(b.name || ""));
+  const owned = items[0] && items[0].list === "owned";
+  const sorted = items.slice().sort(owned
+    ? (a, b) => (a.name || "").localeCompare(b.name || "")
+    : (a, b) => (b.priority || 2) - (a.priority || 2) || (a.name || "").localeCompare(b.name || ""));
   const token = uid();
   await pushShareDoc(token, sorted.map(shareEntry));
-  const title = items.length === 1 ? (items[0].name || "Wishlist item") : `My miCollects wishlist (${items.length} items)`;
+  const title = items.length === 1 ? (items[0].name || "Item")
+    : `My miCollects ${owned ? "collection" : "wishlist"} (${items.length} items)`;
   await openShareSheet(shareUrl(token), title);
 }
 
@@ -1598,7 +1603,7 @@ $("#grid").addEventListener("click", e => {
   if (got && !state.selecting) { e.stopPropagation(); openForm(state.items.find(i => i.id === got.dataset.got), "owned"); return; }
   const c = e.target.closest(".card");
   if (!c) return;
-  if (state.selecting && c.classList.contains("wish")) {
+  if (state.selecting && c.classList.contains("selecting")) {
     const id = c.dataset.id;
     if (state.selected.has(id)) state.selected.delete(id); else state.selected.add(id);
     render();
@@ -1619,7 +1624,7 @@ $("#layoutBar").addEventListener("click", e => {
   if (e.target.closest("#shareSelectBtn")) { state.selecting = true; state.selected = new Set(); render(); }
 });
 $("#selectAllBtn").addEventListener("click", () => {
-  const visIds = visible().filter(i => i.list === "wish").map(i => i.id);
+  const visIds = visible().map(i => i.id);
   const allSelected = visIds.length > 0 && visIds.every(id => state.selected.has(id));
   state.selected = allSelected ? new Set() : new Set(visIds);
   render();
