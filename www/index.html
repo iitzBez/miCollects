@@ -909,6 +909,7 @@ function openForm(item, convertTo) {
   const val = v => esc(v ?? "");
   const title = convertTo === "owned" ? "Add to collection" : convertTo === "wish" ? "Move to wishlist"
     : isNew ? (owned ? "New collection item" : "New wishlist item") : "Edit item";
+  const canItemShare = !isNew && !convert && !owned && cloudEnabled && !!cloudUser;
 
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">${title}</h2>
@@ -987,6 +988,18 @@ function openForm(item, convertTo) {
       <button class="btn primary" id="saveBtn">${convertTo === "owned" ? "Add to collection" : convertTo === "wish" ? "Move to wishlist" : "Save"}</button>
       <button class="btn ghost" id="cancelBtn">Cancel</button>
     </div>
+    ${canItemShare ? `<div class="field" id="itemShareBox"><label>Share this item</label>
+      ${it.shareToken ? `
+      <div class="url-row">
+        <input id="f-share" readonly data-no-clear value="${esc(shareUrl(it.shareToken))}">
+        <button type="button" class="btn ghost" id="itemShareCopyBtn">Copy</button>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn ghost" id="itemShareSendBtn">Share</button>
+        <button type="button" class="btn danger" id="itemShareOffBtn">Turn off</button>
+      </div>` : `
+      <div class="actions"><button type="button" class="btn ghost" id="itemShareOnBtn">Create link for this item</button></div>`}
+      <p class="hint" id="itemShareHint"></p></div>` : ""}
     ${!isNew && !convert ? `<div class="more">
       ${!owned ? `<button class="btn ghost" id="moveBtn">Move to collection</button>` : `<button class="btn ghost" id="wishBtn">Move to wishlist</button>`}
       <button class="btn danger" id="delBtn">Delete</button></div>` : ""}`;
@@ -1050,8 +1063,36 @@ function openForm(item, convertTo) {
   $("#cancelBtn").addEventListener("click", closeSheet);
   const mv = $("#moveBtn"); if (mv) mv.addEventListener("click", () => openForm(state.items.find(i => i.id === it.id), "owned"));
   const wb = $("#wishBtn"); if (wb) wb.addEventListener("click", () => openForm(state.items.find(i => i.id === it.id), "wish"));
+  if (canItemShare) {
+    if (it.shareToken) {
+      $("#itemShareCopyBtn").addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(shareUrl(it.shareToken)); toast("Link copied"); }
+        catch (e) { const f = $("#f-share"); f.focus(); f.select(); }
+      });
+      $("#itemShareSendBtn").addEventListener("click", async () => {
+        const url = shareUrl(it.shareToken);
+        const P = window.Capacitor && window.Capacitor.Plugins;
+        if (P && P.Share) { try { await P.Share.share({ title: it.name || "Wishlist item", url }); return; } catch (e) { if (/cancel/i.test(String(e && e.message))) return; } }
+        try { if (navigator.share) { await navigator.share({ title: it.name || "Wishlist item", url }); return; } } catch (e) { if (e && e.name === "AbortError") return; }
+        try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch (e) {}
+      });
+      const itemShareOff = $("#itemShareOffBtn");
+      itemShareOff.addEventListener("click", () => armThen(itemShareOff, "Tap again to turn off", async () => {
+        await revokeItemShare(it); toast("Sharing turned off for this item");
+        openForm(state.items.find(i => i.id === it.id));
+      }));
+    } else {
+      $("#itemShareOnBtn").addEventListener("click", async () => {
+        const btn = $("#itemShareOnBtn"), hint = $("#itemShareHint");
+        btn.disabled = true; hint.textContent = "Creating link…";
+        try { await createItemShare(it); toast("Share link created"); openForm(state.items.find(i => i.id === it.id)); }
+        catch (e) { hint.textContent = "Couldn’t create link: " + authErrorMsg(e); btn.disabled = false; }
+      });
+    }
+  }
   const del = $("#delBtn");
   if (del) del.addEventListener("click", () => armThen(del, "Tap again to delete", async () => {
+    if (it.shareToken) deleteShareDoc(it.shareToken);
     await store.del(it.id);
     state.items = state.items.filter(i => i.id !== it.id);
     closeSheet(); render(); toast("Deleted");
@@ -1072,6 +1113,8 @@ async function save() {
     scope: it.scope || currentScope });
   if (it.list === "owned") {
     Object.assign(it, { condition: v("f-cond"), qty: Math.max(1, parseInt(v("f-qty"), 10) || 1), paid: num(v("f-paid")), value: num(v("f-value")) });
+    // No longer a wishlist item -- its public share link (if any) no longer applies.
+    if (it.shareToken) { deleteShareDoc(it.shareToken); it.shareToken = null; }
   } else {
     Object.assign(it, { target: num(v("f-target")), priority: +v("f-pri") || 2 });
   }
@@ -1082,7 +1125,7 @@ async function save() {
   if (convert || isNew) state.tab = it.list;
   closeSheet(); render();
   toast(convert ? (it.list === "owned" ? "Added to your collection" : "Moved to your wishlist") : isNew ? "Saved" : "Changes saved");
-  cloudPushItem(it).then(() => refreshShareIfActive()).catch(() => toast("Saved here, but couldn’t sync to the cloud."));
+  cloudPushItem(it).then(() => { refreshShareIfActive(); refreshItemShareIfActive(it); }).catch(() => toast("Saved here, but couldn’t sync to the cloud."));
 }
 
 function armThen(btn, armedLabel, action) {
@@ -1251,27 +1294,33 @@ async function cloudPullAll(silent) {
 const SHARE_BASE_URL = "https://iitzbez.github.io/miCollects/share.html";
 const shareUrl = token => `${SHARE_BASE_URL}?id=${token}`;
 
+async function ensureItemPhotoSynced(it) {
+  if ((it.cloudPhotos || []).length < (it.photos || []).length) {
+    try { await cloudPushItem(it); } catch (e) {}
+  }
+}
+const shareEntry = it => ({
+  name: it.name || "", brand: it.brand || "", category: it.category || "", scale: it.scale || "",
+  description: it.description || "", target: it.target ?? null, priority: it.priority || 2,
+  photo: (it.cloudPhotos && it.cloudPhotos[0]) || null
+});
+async function pushShareDoc(token, items) {
+  await fbDb.collection("shares").doc(token).set({ uid: cloudUser.uid, currency: settings.currency, updated: Date.now(), items });
+}
+async function deleteShareDoc(token) {
+  try { await fbDb.collection("shares").doc(token).delete(); } catch (e) {}
+}
+
 async function buildShareItems() {
   const wish = state.items.filter(i => i.list === "wish");
-  for (const it of wish) {
-    if ((it.cloudPhotos || []).length < (it.photos || []).length) {
-      try { await cloudPushItem(it); } catch (e) {}
-    }
-  }
+  for (const it of wish) await ensureItemPhotoSynced(it);
   return wish
     .slice()
     .sort((a, b) => (b.priority || 2) - (a.priority || 2) || (a.name || "").localeCompare(b.name || ""))
-    .map(it => ({
-      name: it.name || "", brand: it.brand || "", category: it.category || "", scale: it.scale || "",
-      description: it.description || "", target: it.target ?? null, priority: it.priority || 2,
-      photo: (it.cloudPhotos && it.cloudPhotos[0]) || null
-    }));
+    .map(shareEntry);
 }
 
-async function pushShareSnapshot(token) {
-  const items = await buildShareItems();
-  await fbDb.collection("shares").doc(token).set({ uid: cloudUser.uid, currency: settings.currency, updated: Date.now(), items });
-}
+async function pushShareSnapshot(token) { await pushShareDoc(token, await buildShareItems()); }
 
 async function createShare() {
   const token = settings.wishlistShareToken || uid();
@@ -1288,9 +1337,39 @@ async function refreshShareIfActive() {
 
 async function revokeShare() {
   if (!settings.wishlistShareToken) return;
-  const token = settings.wishlistShareToken;
-  try { await fbDb.collection("shares").doc(token).delete(); } catch (e) {}
+  await deleteShareDoc(settings.wishlistShareToken);
   settings.wishlistShareToken = null; saveSettings(); await cloudPushSettings();
+}
+
+/* ---------- Single-item sharing (same shares/{token} mechanism, one item in "items") ---------- */
+async function pushItemShareSnapshot(token, it) {
+  await ensureItemPhotoSynced(it);
+  await pushShareDoc(token, [shareEntry(it)]);
+}
+
+async function createItemShare(it) {
+  const token = it.shareToken || uid();
+  await pushItemShareSnapshot(token, it);
+  it.shareToken = token;
+  try { await store.put(it); } catch (e) {}
+  const idx = state.items.findIndex(i => i.id === it.id);
+  if (idx >= 0) state.items[idx] = { ...it };
+  cloudPushItem(it).catch(() => {});
+}
+
+async function refreshItemShareIfActive(it) {
+  if (!cloudEnabled || !cloudUser || !it.shareToken) return;
+  try { await pushItemShareSnapshot(it.shareToken, it); } catch (e) {}
+}
+
+async function revokeItemShare(it) {
+  if (!it.shareToken) return;
+  await deleteShareDoc(it.shareToken);
+  it.shareToken = null;
+  try { await store.put(it); } catch (e) {}
+  const idx = state.items.findIndex(i => i.id === it.id);
+  if (idx >= 0) state.items[idx] = { ...it };
+  cloudPushItem(it).catch(() => {});
 }
 
 function refreshSettingsIfOpen() {
