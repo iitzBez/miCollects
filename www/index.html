@@ -257,7 +257,7 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
       <button type="button" class="link plain" id="wLocal">Use on this device only</button>
       <button type="button" class="hint-btn" id="wLocalHintBtn" aria-label="What does this mean?" aria-expanded="false">?</button>
     </div>
-    <p class="hint" id="wLocalHint" hidden>Everything stays on this phone — no account needed, nothing sent to the cloud. You can still sign in later from Settings to back it up or use it on another device.</p>
+    <p class="hint" id="wLocalHint" hidden>Everything stays on this phone — no account needed, nothing sent to the cloud. You can export a backup anytime from Settings, and sign in later if you’d like it to sync automatically across devices.</p>
   </div>
   <div class="welcome-form" id="welcomeForm" hidden>
     <h2 id="wfTitle">Sign in</h2>
@@ -1749,7 +1749,7 @@ const isValidEmail = s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 function authAreaHtml() {
   if (!authMode) {
     return `
-    <p class="hint">Sign in to back up your collection to the cloud, sync it to another device, and manage your account, currency, backup and photo-recognition settings.</p>
+    <p class="hint">Sign in to back up your collection to the cloud and sync it automatically to another device, and manage your account settings.</p>
     <div class="actions">
       <button class="btn primary" id="showSignInBtn">Sign in</button>
       <button class="btn ghost" id="showSignUpBtn">Create account</button>
@@ -1801,14 +1801,15 @@ function accountTabHtml() {
 
 function generalTabHtml() {
   return `
+    ${cloudUser ? `
     <h3>Sync</h3>
     <div class="actions"><button class="btn ghost" id="syncBtn">Sync now</button></div>
-    <p class="hint" id="authHint">${settings.lastSynced ? `Last synced ${esc(timeAgo(settings.lastSynced))}.` : ""}</p>
+    <p class="hint" id="authHint">${settings.lastSynced ? `Last synced ${esc(timeAgo(settings.lastSynced))}.` : ""}</p>` : ""}
     <h3>Currency</h3>
     <div class="field"><label for="s-cur">Currency symbol</label>
       <input id="s-cur" value="${esc(settings.currency)}" maxlength="4" autocomplete="off"></div>
     <h3>Backup</h3>
-    <p class="hint">Your collection already syncs to the cloud, but export a local copy now and then too.</p>
+    <p class="hint">${cloudUser ? "Your collection already syncs to the cloud, but export a local copy now and then too." : "Export a backup file, or import one, to move your collection between devices."}</p>
     <div class="actions">
       <button class="btn ghost" id="expBtn">Export backup</button>
       <label class="btn ghost" for="impIn">Import backup</label>
@@ -1836,18 +1837,27 @@ function apiTabHtml() {
 }
 
 function openSettings() {
-  const tabs = [["account", "My Account"], ["general", "General"], ["api", "API"]];
-  const tabBody = !cloudUser ? "" : settingsTab === "account" ? accountTabHtml() : settingsTab === "api" ? apiTabHtml() : generalTabHtml();
+  const tabs = cloudUser
+    ? [["account", "My Account"], ["general", "General"], ["api", "API"]]
+    : [["account", "Account"], ["general", "General"]];
+  if (!tabs.some(([k]) => k === settingsTab)) settingsTab = cloudUser ? "account" : "general";
+  const tabBody = settingsTab === "account"
+    ? (cloudUser ? accountTabHtml() : !cloudEnabled ? `<p class="hint">Cloud sync isn’t set up for this build yet.</p>` : authAreaHtml())
+    : settingsTab === "api" ? apiTabHtml() : generalTabHtml();
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">Settings</h2>
-    ${!cloudEnabled ? `<p class="hint">Cloud sync isn’t set up for this build yet.</p>` : !cloudUser ? authAreaHtml() : `
     <div class="settings-tabs" id="settingsTabs" role="tablist">
       ${tabs.map(([k, l]) => `<button type="button" class="stab" data-stab="${k}" role="tab" aria-selected="${settingsTab === k}">${esc(l)}</button>`).join("")}
     </div>
-    <div id="settingsTabBody">${tabBody}</div>`}
+    <div id="settingsTabBody">${tabBody}</div>
     <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>`;
 
-  if (cloudEnabled && !cloudUser) {
+  $("#settingsTabs").addEventListener("click", e => {
+    const b = e.target.closest("[data-stab]"); if (!b || b.dataset.stab === settingsTab) return;
+    settingsTab = b.dataset.stab; authMode = null; openSettings();
+  });
+
+  if (settingsTab === "account" && cloudEnabled && !cloudUser) {
     if (!authMode) {
       $("#showSignInBtn").addEventListener("click", () => { authMode = "signin"; openSettings(); });
       $("#showSignUpBtn").addEventListener("click", () => { authMode = "signup"; openSettings(); });
@@ -1875,12 +1885,8 @@ function openSettings() {
     }
   }
 
-  if (cloudUser) {
-    $("#settingsTabs").addEventListener("click", e => {
-      const b = e.target.closest("[data-stab]"); if (!b || b.dataset.stab === settingsTab) return;
-      settingsTab = b.dataset.stab; openSettings();
-    });
-    if (settingsTab === "account") {
+  if (settingsTab === "account") {
+    if (cloudUser) {
       $("#signOutBtn").addEventListener("click", () => cloudSignOut());
       $("#avatarBtn").addEventListener("click", async () => {
         const hint = $("#avatarHint");
@@ -1922,33 +1928,34 @@ function openSettings() {
         try { await cloudResetPassword(cloudUser.email); hint.textContent = "Check your email for a reset link."; }
         catch (e) { hint.textContent = "Couldn’t send: " + authErrorMsg(e); }
       });
-    } else if (settingsTab === "general") {
-      $("#syncBtn").addEventListener("click", () => cloudPullAll());
-      $("#s-cur").addEventListener("input", e => { settings.currency = e.target.value; saveSettings(); render(); cloudPushSettings(); });
-      $("#s-theme").addEventListener("click", () => openPicker("Theme", THEME_OPTIONS, settings.theme, v => {
-        settings.theme = v; saveSettings(); applyTheme(); openSettings();
-      }));
-      $("#expBtn").addEventListener("click", exportBackup);
-      $("#impIn").addEventListener("change", importBackup);
-      const wipe = $("#wipeBtn");
-      wipe.addEventListener("click", () => armThen(wipe, "Tap again to delete all items", async () => {
-        const ids = state.items.map(i => i.id);
-        for (const id of ids) await store.del(id);
-        state.items = []; closeSheet(); render(); toast("All items deleted");
-        ids.forEach(cloudDeleteItem);
-        refreshShareIfActive();
-      }));
-    } else if (settingsTab === "api") {
-      $("#s-gemini").addEventListener("input", e => { settings.geminiKey = e.target.value.trim(); });
-      $("#s-gemini").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#geminiSaveBtn").click(); } });
-      $("#geminiSaveBtn").addEventListener("click", async () => {
-        settings.geminiKey = $("#s-gemini").value.trim(); saveSettings();
-        const hint = $("#geminiHint");
-        if (cloudUser) { hint.textContent = "Saving…"; await cloudPushSettings(); hint.textContent = "Saved."; }
-        else hint.textContent = "Saved.";
-        toast("API key saved");
-      });
     }
+  } else if (settingsTab === "general") {
+    const syncBtn = $("#syncBtn");
+    if (syncBtn) syncBtn.addEventListener("click", () => cloudPullAll());
+    $("#s-cur").addEventListener("input", e => { settings.currency = e.target.value; saveSettings(); render(); cloudPushSettings(); });
+    $("#s-theme").addEventListener("click", () => openPicker("Theme", THEME_OPTIONS, settings.theme, v => {
+      settings.theme = v; saveSettings(); applyTheme(); openSettings();
+    }));
+    $("#expBtn").addEventListener("click", exportBackup);
+    $("#impIn").addEventListener("change", importBackup);
+    const wipe = $("#wipeBtn");
+    wipe.addEventListener("click", () => armThen(wipe, "Tap again to delete all items", async () => {
+      const ids = state.items.map(i => i.id);
+      for (const id of ids) await store.del(id);
+      state.items = []; closeSheet(); render(); toast("All items deleted");
+      ids.forEach(cloudDeleteItem);
+      refreshShareIfActive();
+    }));
+  } else if (settingsTab === "api" && cloudUser) {
+    $("#s-gemini").addEventListener("input", e => { settings.geminiKey = e.target.value.trim(); });
+    $("#s-gemini").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#geminiSaveBtn").click(); } });
+    $("#geminiSaveBtn").addEventListener("click", async () => {
+      settings.geminiKey = $("#s-gemini").value.trim(); saveSettings();
+      const hint = $("#geminiHint");
+      if (cloudUser) { hint.textContent = "Saving…"; await cloudPushSettings(); hint.textContent = "Saved."; }
+      else hint.textContent = "Saved.";
+      toast("API key saved");
+    });
   }
   $("#sDone").addEventListener("click", closeSheet);
   addClearButtons($("#sheetBody"));
