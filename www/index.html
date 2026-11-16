@@ -166,6 +166,18 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .toast{position:fixed;left:50%;bottom:calc(150px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;font-weight:600;z-index:20;max-width:calc(100% - 32px);text-align:center}
 [hidden]{display:none!important}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* Welcome / sign-in splash (first launch only) */
+.welcome{position:fixed;inset:0;z-index:30;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;padding:24px;text-align:center}
+.welcome-logo{font:800 clamp(32px,10vw,44px)/1 var(--display);letter-spacing:-.03em;color:var(--ink);margin:0;animation:wlogo .6s ease-out}
+.welcome-logo span{color:var(--brass)}
+@keyframes wlogo{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+.welcome-choices,.welcome-form{width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px;opacity:0;animation:wfade .4s ease-out forwards}
+@keyframes wfade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.welcome-form{text-align:left}
+.welcome-form h2{font:700 22px/1.2 var(--display);margin:0 0 4px;text-align:center}
+.welcome .btn{width:100%}
+@media (prefers-reduced-motion:reduce){.welcome-logo,.welcome-choices,.welcome-form{animation:none;opacity:1}}
 </style>
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-auth-compat.js"></script>
@@ -173,6 +185,25 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-storage-compat.js"></script>
 </head>
 <body>
+
+<div class="welcome" id="welcome" hidden>
+  <p class="welcome-logo">mi<span>Collects</span></p>
+  <div class="welcome-choices" id="welcomeChoices" hidden>
+    <button type="button" class="btn primary" id="wSignIn">Sign in</button>
+    <button type="button" class="btn ghost" id="wSignUp">Create account</button>
+    <button type="button" class="link plain" id="wLocal">Use on this device only</button>
+  </div>
+  <div class="welcome-form" id="welcomeForm" hidden>
+    <h2 id="wfTitle">Sign in</h2>
+    <div class="field"><label for="wf-email">Email</label>
+      <input id="wf-email" type="email" autocomplete="email" placeholder="you@example.com"></div>
+    <div class="field"><label for="wf-pass">Password</label>
+      <input id="wf-pass" type="password" autocomplete="current-password" placeholder="Password"></div>
+    <button type="button" class="btn primary" id="wfSubmit">Sign in</button>
+    <p class="hint" id="wfHint"></p>
+    <button type="button" class="link plain" id="wfBack">Back</button>
+  </div>
+</div>
 
 <header class="top">
   <div class="top-text">
@@ -248,13 +279,19 @@ const store = {
   },
   os(mode) { return this.db.transaction("items", mode).objectStore("items"); },
   req(r) { return new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
-  async all() { return this.db ? this.req(this.os("readonly").getAll()) : [...this.mem.values()]; },
+  /* `scope` partitions items by account: "local" for guest/offline-only items, or a signed-in user's
+     uid. Passing it filters to just that partition, so switching accounts (or signing out) only ever
+     shows that partition's items -- items from another scope stay stored but hidden until it's active. */
+  async all(scope) {
+    const items = this.db ? await this.req(this.os("readonly").getAll()) : [...this.mem.values()];
+    return scope == null ? items : items.filter(i => (i.scope || "local") === scope);
+  },
   async put(it) { if (!this.db) { this.mem.set(it.id, it); return; } await this.req(this.os("readwrite").put(it)); },
   async del(id) { if (!this.db) { this.mem.delete(id); return; } await this.req(this.os("readwrite").delete(id)); },
   async clear() { if (!this.db) { this.mem.clear(); return; } await this.req(this.os("readwrite").clear()); }
 };
 
-const settings = { currency: "R", layout: "grid2", geminiKey: "" };
+const settings = { currency: "R", layout: "grid2", geminiKey: "", onboarded: false };
 try { Object.assign(settings, JSON.parse(localStorage.getItem("cabinet-settings") || "{}")); } catch (e) {}
 function saveSettings() { try { localStorage.setItem("cabinet-settings", JSON.stringify(settings)); } catch (e) {} }
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
@@ -442,6 +479,10 @@ function compress(file) {
 
 /* ---------- Add using URL ---------- */
 const UA = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
+/* Calls the CapacitorHttp plugin's methods directly (bypassing CORS for scraping shop pages/images and
+   calling Gemini) rather than enabling CapacitorHttp's global fetch/XMLHttpRequest patch in
+   capacitor.config.json -- that patch also intercepts Firebase's own SDK calls and breaks Storage
+   uploads ("storage/unknown"), since Firebase's upload protocol doesn't survive being proxied through it. */
 const nativeHttp = () => {
   const C = window.Capacitor;
   return C && C.isNativePlatform && C.isNativePlatform() && C.Plugins && C.Plugins.CapacitorHttp ? C.Plugins.CapacitorHttp : null;
@@ -920,7 +961,8 @@ async function save() {
   const name = v("f-name");
   if (!name) { $("#f-name").focus(); toast("Give it a name first"); return; }
   Object.assign(it, { name, category: v("f-cat"), series: v("f-series"), brand: v("f-brand"), description: v("f-desc"),
-    url: normUrl(v("f-url")), notes: v("f-notes"), photos: photos.slice(), photo: photos[0] || null, updated: Date.now() });
+    url: normUrl(v("f-url")), notes: v("f-notes"), photos: photos.slice(), photo: photos[0] || null, updated: Date.now(),
+    scope: it.scope || currentScope });
   if (it.list === "owned") {
     Object.assign(it, { condition: v("f-cond"), qty: Math.max(1, parseInt(v("f-qty"), 10) || 1), paid: num(v("f-paid")), value: num(v("f-value")) });
   } else {
@@ -957,7 +999,7 @@ const firebaseConfig = {
   appId: "1:685369410685:web:a7812c04ba3b2215a51d14"
 };
 const cloudEnabled = firebaseConfig.apiKey !== "PASTE_ME";
-let cloudUser = null, appReady = false;
+let cloudUser = null, appReady = false, currentScope = "local", authResolvedOnce = false, welcomeShown = false;
 let fbAuth = null, fbDb = null, fbStorage = null;
 if (cloudEnabled) {
   firebase.initializeApp(firebaseConfig);
@@ -975,6 +1017,12 @@ const AUTH_ERRORS = {
   "auth/network-request-failed": "Couldn’t reach the server. Check your connection."
 };
 const authErrorMsg = e => AUTH_ERRORS[e && e.code] || (e && e.message) || "Something went wrong.";
+function passwordPolicyError(pw) {
+  if (pw.length < 8) return "Use at least 8 characters.";
+  if (!/[0-9]/.test(pw)) return "Include at least one number.";
+  if (!/[^A-Za-z0-9]/.test(pw)) return "Include at least one special character.";
+  return null;
+}
 
 function cloudSignUp(email, password) { return fbAuth.createUserWithEmailAndPassword(email, password); }
 function cloudSignIn(email, password) { return fbAuth.signInWithEmailAndPassword(email, password); }
@@ -1028,14 +1076,14 @@ async function cloudPullAll(silent) {
       const urls = Array.isArray(remote.photos) ? remote.photos : [];
       const photos = [];
       for (const url of urls) { try { photos.push(await fetchImage(url)); } catch (e) {} }
-      await store.put({ ...remote, id: doc.id, photos, photo: photos[0] || null, cloudPhotos: urls });
+      await store.put({ ...remote, id: doc.id, photos, photo: photos[0] || null, cloudPhotos: urls, scope: currentScope });
       pulled++;
     }
     const remoteIds = new Set(snap.docs.map(d => d.id));
     for (const it of state.items) if (!remoteIds.has(it.id)) await cloudPushItem(it);
     const metaDoc = await fbDb.collection("users").doc(cloudUser.uid).collection("meta").doc("settings").get();
     if (metaDoc.exists) { Object.assign(settings, metaDoc.data()); saveSettings(); } else { await cloudPushSettings(); }
-    state.items = await store.all();
+    state.items = await store.all(currentScope);
     render();
     if (!silent) toast(pulled ? `Synced — updated ${pulled} ${pulled === 1 ? "item" : "items"}` : "Synced — everything’s up to date");
   } catch (e) {
@@ -1047,11 +1095,22 @@ function refreshSettingsIfOpen() {
   if (sheetOpen && $("#sheetTitle") && $("#sheetTitle").textContent === "Settings") openSettings();
 }
 
+/* Items are partitioned by `scope` (see store.all above): switching accounts, or signing out back to
+   "local", swaps which partition `state.items` shows, so one account's synced items never leak into
+   another account's view or the signed-out local-only view. */
+function maybeShowWelcome() {
+  if (welcomeShown || !appReady || (cloudEnabled && !authResolvedOnce)) return;
+  if (!settings.onboarded) { welcomeShown = true; showWelcome(); }
+}
 if (cloudEnabled) {
-  fbAuth.onAuthStateChanged(user => {
+  fbAuth.onAuthStateChanged(async user => {
     cloudUser = user;
+    currentScope = user ? user.uid : "local";
+    if (appReady) { state.items = await store.all(currentScope); render(); }
     if (appReady && user) cloudPullAll(true);
     refreshSettingsIfOpen();
+    if (!authResolvedOnce) { authResolvedOnce = true; if (user) { settings.onboarded = true; saveSettings(); } }
+    maybeShowWelcome();
   });
 }
 
@@ -1071,7 +1130,7 @@ function openSettings() {
     <div class="field"><label for="s-email">Email</label>
       <input id="s-email" type="email" autocomplete="email" placeholder="you@example.com"></div>
     <div class="field"><label for="s-pass">Password</label>
-      <input id="s-pass" type="password" autocomplete="current-password" placeholder="At least 6 characters"></div>
+      <input id="s-pass" type="password" autocomplete="current-password" placeholder="For new accounts: 8+ chars, a number, a symbol"></div>
     <div class="actions">
       <button class="btn primary" id="signInBtn">Sign in</button>
       <button class="btn ghost" id="signUpBtn">Create account</button>
@@ -1101,14 +1160,15 @@ function openSettings() {
     $("#signOutBtn").addEventListener("click", () => cloudSignOut());
   } else if (cloudEnabled) {
     const authHint = $("#authHint");
-    const authAction = async (fn, okMsg) => {
+    const authAction = async (fn, okMsg, requirePolicy) => {
       const email = $("#s-email").value.trim(), pass = $("#s-pass").value;
       if (!email || !pass) { authHint.textContent = "Enter an email and password."; return; }
+      if (requirePolicy) { const err = passwordPolicyError(pass); if (err) { authHint.textContent = err; return; } }
       authHint.textContent = "Working…";
       try { await fn(email, pass); toast(okMsg); } catch (e) { authHint.textContent = authErrorMsg(e); }
     };
-    $("#signInBtn").addEventListener("click", () => authAction(cloudSignIn, "Signed in"));
-    $("#signUpBtn").addEventListener("click", () => authAction(cloudSignUp, "Account created"));
+    $("#signInBtn").addEventListener("click", () => authAction(cloudSignIn, "Signed in", false));
+    $("#signUpBtn").addEventListener("click", () => authAction(cloudSignUp, "Account created", true));
     $("#forgotBtn").addEventListener("click", async () => {
       const email = $("#s-email").value.trim();
       if (!email) { authHint.textContent = "Enter your email first."; return; }
@@ -1124,7 +1184,8 @@ function openSettings() {
     const wipe = $("#wipeBtn");
     wipe.addEventListener("click", () => armThen(wipe, "Tap again to delete all items", async () => {
       const ids = state.items.map(i => i.id);
-      await store.clear(); state.items = []; closeSheet(); render(); toast("All items deleted");
+      for (const id of ids) await store.del(id);
+      state.items = []; closeSheet(); render(); toast("All items deleted");
       ids.forEach(cloudDeleteItem);
     }));
   }
@@ -1162,13 +1223,13 @@ async function importBackup(e) {
     let n = 0;
     for (const raw of items) {
       if (!raw || !raw.name || !["owned", "wish"].includes(raw.list)) continue;
-      const it = { ...raw, id: raw.id || uid() };
+      const it = { ...raw, id: raw.id || uid(), scope: currentScope };
       const existing = state.items.find(i => i.id === it.id);
       if (existing && (existing.updated || 0) > (it.updated || 0)) continue;
       await store.put(it); n++;
     }
     if (parsed.settings && typeof parsed.settings === "object") { Object.assign(settings, parsed.settings); saveSettings(); }
-    state.items = await store.all();
+    state.items = await store.all(currentScope);
     closeSheet(); render();
     toast(n ? `Imported ${n} ${n === 1 ? "item" : "items"}` : "Nothing new in that backup");
   } catch (err) {
@@ -1203,14 +1264,43 @@ document.querySelectorAll(".nav button").forEach(b => b.addEventListener("click"
 $("#addBtn").addEventListener("click", () => openForm(null));
 $("#settingsBtn").addEventListener("click", openSettings);
 
+/* ---------- Welcome (first launch) ---------- */
+function showWelcome() {
+  $("#welcome").hidden = false;
+  $("#wSignIn").hidden = $("#wSignUp").hidden = !cloudEnabled;
+  setTimeout(() => { $("#welcomeChoices").hidden = false; }, 1000);
+}
+function finishWelcome() { settings.onboarded = true; saveSettings(); $("#welcome").hidden = true; }
+$("#wLocal").addEventListener("click", finishWelcome);
+$("#wSignIn").addEventListener("click", () => openWelcomeForm("signin"));
+$("#wSignUp").addEventListener("click", () => openWelcomeForm("signup"));
+$("#wfBack").addEventListener("click", () => { $("#welcomeForm").hidden = true; $("#welcomeChoices").hidden = false; });
+function openWelcomeForm(mode) {
+  $("#welcomeChoices").hidden = true;
+  $("#welcomeForm").hidden = false;
+  $("#wfHint").textContent = "";
+  $("#wfTitle").textContent = mode === "signin" ? "Sign in" : "Create account";
+  $("#wfSubmit").textContent = mode === "signin" ? "Sign in" : "Create account";
+  $("#wfSubmit").onclick = async () => {
+    const email = $("#wf-email").value.trim(), pass = $("#wf-pass").value;
+    const hint = $("#wfHint");
+    if (!email || !pass) { hint.textContent = "Enter an email and password."; return; }
+    if (mode === "signup") { const err = passwordPolicyError(pass); if (err) { hint.textContent = err; return; } }
+    hint.textContent = "Working…";
+    try { await (mode === "signin" ? cloudSignIn(email, pass) : cloudSignUp(email, pass)); finishWelcome(); }
+    catch (e) { hint.textContent = authErrorMsg(e); }
+  };
+}
+
 /* ---------- Start ---------- */
 (async () => {
   await store.open();
-  try { state.items = await store.all(); } catch (e) { state.items = []; }
+  try { state.items = await store.all(currentScope); } catch (e) { state.items = []; }
   render();
   if (!store.db) toast("Storage is unavailable, so items won’t be kept after closing.");
   appReady = true;
   if (cloudUser) cloudPullAll(true);
+  maybeShowWelcome();
 })();
 </script>
 </body>
