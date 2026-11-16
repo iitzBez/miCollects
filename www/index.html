@@ -45,7 +45,10 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 #stats{margin:6px 0 0;color:var(--muted);font-size:14px;min-height:20px}
 .brand{margin:0 0 6px;font:800 15px/1 var(--display);letter-spacing:-.01em;color:var(--ink)}
 .brand span{color:var(--brass)}
-.icon-btn{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;flex:none}
+.icon-btn{position:relative;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;flex:none}
+.icon-btn.syncing::after{content:"";position:absolute;top:2px;right:2px;width:10px;height:10px;border-radius:50%;background:var(--brass);box-shadow:0 0 0 2px var(--surface);animation:syncPulse 1s ease-in-out infinite}
+@keyframes syncPulse{0%,100%{opacity:1}50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.icon-btn.syncing::after{animation:none}}
 .icon-btn svg{width:20px;height:20px}
 
 /* Toolbar */
@@ -1071,38 +1074,60 @@ async function cloudPushSettings() {
   try { await fbDb.collection("users").doc(cloudUser.uid).collection("meta").doc("settings").set(rest); } catch (e) {}
 }
 
-/* Pulls every remote item newer than the local copy, downloads its photos, and pushes up any local
-   item the cloud doesn't have yet (covers signing in for the first time with existing local items). */
+/* Pulls every remote item newer than the local copy, downloads its photos (in parallel, across all
+   items at once, rather than one photo at a time -- much faster for a full pull after a fresh
+   install), and pushes up any local item the cloud doesn't have yet (covers signing in for the first
+   time with existing local items). Each item is isolated in its own try/catch: one item failing to
+   store (e.g. hitting a storage quota) used to throw out of the whole loop and silently abandon every
+   item after it -- now it's just counted as failed and the rest still go through. */
+let cloudSyncing = false;
 async function cloudPullAll(silent) {
   if (!cloudEnabled || !cloudUser) return;
+  const setHint = msg => { const h = $("#authHint"); if (h) h.textContent = msg; };
+  if (cloudSyncing) { toast("Already syncing…"); setHint("Already syncing…"); return; }
+  cloudSyncing = true;
+  $("#settingsBtn").classList.add("syncing");
   if (!silent) toast("Syncing…");
+  setHint("Syncing…");
   try {
     const snap = await fbDb.collection("users").doc(cloudUser.uid).collection("items").get();
-    let pulled = 0;
-    for (const doc of snap.docs) {
-      const remote = doc.data();
+    const toPull = snap.docs.filter(doc => {
       const existing = state.items.find(i => i.id === doc.id);
-      if (existing && (existing.updated || 0) >= (remote.updated || 0)) continue;
-      const urls = Array.isArray(remote.photos) ? remote.photos : [];
-      const photos = [];
-      for (const url of urls) { try { photos.push(await fetchImage(url)); } catch (e) {} }
-      await store.put({ ...remote, id: doc.id, photos, photo: photos[0] || null, cloudPhotos: urls, scope: currentScope });
-      pulled++;
-    }
+      return !(existing && (existing.updated || 0) >= (doc.data().updated || 0));
+    });
+    let pulled = 0, failed = 0;
+    await Promise.all(toPull.map(async doc => {
+      try {
+        const remote = doc.data();
+        const urls = Array.isArray(remote.photos) ? remote.photos : [];
+        const photos = (await Promise.all(urls.map(url => fetchImage(url).catch(() => null)))).filter(Boolean);
+        await store.put({ ...remote, id: doc.id, photos, photo: photos[0] || null, cloudPhotos: urls, scope: currentScope });
+        pulled++;
+      } catch (e) { failed++; }
+    }));
     const remoteIds = new Set(snap.docs.map(d => d.id));
-    for (const it of state.items) if (!remoteIds.has(it.id)) await cloudPushItem(it);
-    const metaDoc = await fbDb.collection("users").doc(cloudUser.uid).collection("meta").doc("settings").get();
-    if (metaDoc.exists) { Object.assign(settings, metaDoc.data()); saveSettings(); } else { await cloudPushSettings(); }
+    for (const it of state.items) {
+      if (remoteIds.has(it.id)) continue;
+      try { await cloudPushItem(it); } catch (e) {}
+    }
+    try {
+      const metaDoc = await fbDb.collection("users").doc(cloudUser.uid).collection("meta").doc("settings").get();
+      if (metaDoc.exists) { Object.assign(settings, metaDoc.data()); saveSettings(); } else { await cloudPushSettings(); }
+    } catch (e) {}
     state.items = await store.all(currentScope);
     render();
     settings.lastSynced = Date.now(); saveSettings();
-    const msg = pulled ? `Synced — updated ${pulled} ${pulled === 1 ? "item" : "items"}` : "Synced — everything’s up to date";
-    if (!silent) toast(msg);
-    const authHint = $("#authHint"); if (authHint) authHint.textContent = `${msg} (just now)`;
+    const msg = failed ? `Synced, but ${failed} ${failed === 1 ? "item" : "items"} didn’t come through — tap Sync now to retry.`
+      : pulled ? `Synced — updated ${pulled} ${pulled === 1 ? "item" : "items"}` : "Synced — everything’s up to date";
+    if (!silent || failed) toast(msg);
+    setHint(`${msg} (just now)`);
   } catch (e) {
     const msg = "Couldn’t sync: " + authErrorMsg(e);
     if (!silent) toast(msg);
-    const authHint = $("#authHint"); if (authHint) authHint.textContent = msg;
+    setHint(msg);
+  } finally {
+    cloudSyncing = false;
+    $("#settingsBtn").classList.remove("syncing");
   }
 }
 
