@@ -161,8 +161,10 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .url-box{background:var(--sunk);border-radius:14px;padding:12px;margin-bottom:16px}
 .url-box label{display:block;font-size:14px;font-weight:700;margin-bottom:8px}
 .url-row{display:flex;gap:8px;align-items:center}
-.url-row input{flex:1;min-width:0;min-height:48px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px 12px}
-.url-row .btn{flex:none;min-height:40px;padding:0 14px;font-size:14px}
+.url-row input{flex:1;width:100%;min-width:0;min-height:48px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px 12px}
+.url-row .clearable input{padding-right:34px}
+.url-row .clearable.has-pw input{padding-right:64px}
+.url-row .btn.primary, .url-row .btn.ghost{flex:none;min-height:34px;padding:0 10px;font-size:13px}
 .url-box .hint a{color:var(--brass);font-weight:600}
 .btn[disabled]{opacity:.6;cursor:progress}
 .photo-main{aspect-ratio:16/10;border-radius:14px;background:var(--sunk);overflow:hidden;display:grid}
@@ -259,8 +261,6 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
     <input id="q" type="search" placeholder="Search name, series, notes" autocomplete="off">
   </label>
-  <label class="sr" for="catSel">Category</label>
-  <select id="catSel" class="sort"></select>
   <label class="sr" for="sort">Sort by</label>
   <select id="sort" class="sort"></select>
   <label class="sr" for="group">Group by</label>
@@ -286,6 +286,7 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
   </button>
 </div>
+<div class="chips" id="catChips" role="toolbar" aria-label="Filter by category"></div>
 <div class="pill-field" id="pillField" role="group" aria-label="Filter by"></div>
 <div class="chips" id="chips" role="toolbar" aria-label="Filter"></div>
 
@@ -364,7 +365,7 @@ const LAYOUTS = ["grid1", "grid2", "grid3", "list"];
 if (!LAYOUTS.includes(settings.layout)) settings.layout = "grid2";
 
 /* ---------- State ---------- */
-const state = { tab: "owned", q: "", cat: "All", pillField: "brand", pillVal: "All", sort: "recent", group: "none", layout: settings.layout, items: [], selecting: false, selectMode: null, selected: new Set() };
+const state = { tab: "owned", q: "", cat: "All", pillField: "all", pillVal: "All", sort: "recent", group: "none", layout: settings.layout, items: [], selecting: false, selectMode: null, selected: new Set() };
 const PRI = { 3: "High", 2: "Medium", 1: "Low" };
 const CONDITIONS = ["", "Sealed / new in box", "Mint", "Near mint", "Excellent", "Good", "Fair", "Poor"];
 const price = i => i.list === "owned" ? (+i.value || 0) * (+i.qty || 1) : (+i.target || 0);
@@ -376,7 +377,7 @@ function visible() {
   const q = norm(state.q);
   let list = state.items.filter(i => i.list === state.tab);
   if (state.cat !== "All") list = list.filter(i => (i.category || "Uncategorised") === state.cat);
-  if (state.pillVal !== "All") list = list.filter(i => pillLabel(i) === state.pillVal);
+  if (state.pillField !== "all" && state.pillVal !== "All") list = list.filter(i => pillLabel(i) === state.pillVal);
   if (q) list = list.filter(i => [i.name, i.brand, i.series, i.category, i.scale, i.description, i.notes, i.condition].join(" ").toLowerCase().includes(q));
   const by = {
     recent: (a, b) => (b.updated || 0) - (a.updated || 0),
@@ -452,23 +453,30 @@ function render() {
     ? `${pieces} ${pieces === 1 ? "piece" : "pieces"}${total ? `, worth ${money(total)}` : ""}`
     : `${tabItems.length} wanted${total ? `, about ${money(total)} to complete` : ""}`;
 
+  // Three-level drill-down: pick a Category, then All/Brand/Series, then (if Brand or Series) a value.
   const cats = [...new Set(tabItems.map(i => i.category || "Uncategorised"))].sort();
   if (state.cat !== "All" && !cats.includes(state.cat)) state.cat = "All";
-  $("#catSel").innerHTML = ["All", ...cats].map(c => `<option value="${esc(c)}"${c === state.cat ? " selected" : ""}>${c === "All" ? "All categories" : esc(c)}</option>`).join("");
-  $("#catSel").hidden = cats.length <= 1;
+  $("#catChips").innerHTML = cats.length > 1
+    ? ["All", ...cats].map(c => `<button class="chip" aria-pressed="${c === state.cat}" data-cat="${esc(c)}">${c === "All" ? "All categories" : esc(c)}</button>`).join("")
+    : "";
+  $("#catChips").hidden = cats.length <= 1;
 
-  const catFiltered = state.cat === "All" ? tabItems : tabItems.filter(i => (i.category || "Uncategorised") === state.cat);
   $("#pillField").innerHTML = tabItems.length
-    ? ["brand", "series"].map(f => `<button type="button" data-pillfield="${f}" aria-pressed="${state.pillField === f}">${f === "brand" ? "Brand" : "Series"}</button>`).join("")
+    ? ["all", "brand", "series"].map(f => `<button type="button" data-pillfield="${f}" aria-pressed="${state.pillField === f}">${f === "all" ? "All" : f === "brand" ? "Brand" : "Series"}</button>`).join("")
     : "";
   $("#pillField").hidden = !tabItems.length;
 
-  const pillVals = [...new Set(catFiltered.map(pillLabel))].sort();
-  if (state.pillVal !== "All" && !pillVals.includes(state.pillVal)) state.pillVal = "All";
-  $("#chips").innerHTML = pillVals.length > 1
-    ? ["All", ...pillVals].map(v => `<button class="chip" aria-pressed="${v === state.pillVal}" data-pillval="${esc(v)}">${esc(v)}</button>`).join("")
-    : "";
-  $("#chips").hidden = pillVals.length <= 1;
+  if (state.pillField === "all") {
+    $("#chips").innerHTML = ""; $("#chips").hidden = true;
+  } else {
+    const catFiltered = state.cat === "All" ? tabItems : tabItems.filter(i => (i.category || "Uncategorised") === state.cat);
+    const pillVals = [...new Set(catFiltered.map(pillLabel))].sort();
+    if (state.pillVal !== "All" && !pillVals.includes(state.pillVal)) state.pillVal = "All";
+    $("#chips").innerHTML = pillVals.length > 1
+      ? ["All", ...pillVals].map(v => `<button class="chip" aria-pressed="${v === state.pillVal}" data-pillval="${esc(v)}">${esc(v)}</button>`).join("")
+      : "";
+    $("#chips").hidden = pillVals.length <= 1;
+  }
 
   const sorts = owned
     ? [["recent", "Recent"], ["name", "Name"], ["value", "Value"]]
@@ -1612,10 +1620,6 @@ function generalTabHtml() {
     <h3>Currency</h3>
     <div class="field"><label for="s-cur">Currency symbol</label>
       <input id="s-cur" value="${esc(settings.currency)}" maxlength="4" autocomplete="off"></div>
-    <h3>Share wishlist</h3>
-    <p class="hint">Send a link anyone can open in a browser — no account or app install needed — to see your wishlist with target prices and priority, so they know what to get you.</p>
-    <div class="actions"><button class="btn primary" id="shareBtn">Share wishlist</button></div>
-    <p class="hint" id="shareHint">${settings.wishlistShareToken ? `Shared — <button type="button" class="link plain" id="shareOffBtn">stop sharing</button>` : ""}</p>
     <h3>Backup</h3>
     <p class="hint">Your collection already syncs to the cloud, but export a local copy now and then too.</p>
     <div class="actions">
@@ -1713,21 +1717,6 @@ function openSettings() {
       $("#syncBtn").addEventListener("click", () => cloudPullAll());
       $("#s-cur").addEventListener("input", e => { settings.currency = e.target.value; saveSettings(); render(); cloudPushSettings(); });
       $("#s-theme").addEventListener("change", e => { settings.theme = e.target.value; saveSettings(); });
-      $("#shareBtn").addEventListener("click", async () => {
-        const btn = $("#shareBtn"), hint = $("#shareHint");
-        btn.disabled = true; const original = btn.textContent; btn.textContent = "Sharing…";
-        try {
-          await createShare();
-          await openShareSheet(shareUrl(settings.wishlistShareToken), "My miCollects wishlist");
-          openSettings();
-        } catch (e) { hint.textContent = "Couldn’t share: " + authErrorMsg(e); btn.disabled = false; btn.textContent = original; }
-      });
-      if (settings.wishlistShareToken) {
-        const shareOff = $("#shareOffBtn");
-        if (shareOff) shareOff.addEventListener("click", async () => {
-          await revokeShare(); toast("Sharing turned off"); openSettings();
-        });
-      }
       $("#expBtn").addEventListener("click", exportBackup);
       $("#impIn").addEventListener("change", importBackup);
       const wipe = $("#wipeBtn");
@@ -1845,7 +1834,10 @@ $("#grid").addEventListener("keydown", e => {
   if ((e.key === "Enter" || e.key === " ") && e.target.classList.contains("card")) { e.preventDefault(); e.target.click(); }
 });
 $("#chips").addEventListener("click", e => { const b = e.target.closest("[data-pillval]"); if (b) { state.pillVal = b.dataset.pillval; render(); } });
-$("#catSel").addEventListener("change", e => { state.cat = e.target.value; state.pillVal = "All"; render(); });
+$("#catChips").addEventListener("click", e => {
+  const b = e.target.closest("[data-cat]"); if (!b || b.dataset.cat === state.cat) return;
+  state.cat = b.dataset.cat; state.pillVal = "All"; render();
+});
 $("#pillField").addEventListener("click", e => {
   const b = e.target.closest("[data-pillfield]"); if (!b || b.dataset.pillfield === state.pillField) return;
   state.pillField = b.dataset.pillfield; state.pillVal = "All"; render();
@@ -1891,7 +1883,7 @@ $("#selectDeleteBtn").addEventListener("click", async () => {
 document.querySelectorAll(".nav button").forEach(b => b.addEventListener("click", () => {
   if (state.tab === b.dataset.tab) return;
   exitSelectModeAndPop();
-  state.tab = b.dataset.tab; state.cat = "All"; state.pillVal = "All"; render(); scrollTo({ top: 0 });
+  state.tab = b.dataset.tab; state.cat = "All"; state.pillField = "all"; state.pillVal = "All"; render(); scrollTo({ top: 0 });
 }));
 $("#addBtn").addEventListener("click", () => openForm(null));
 $("#settingsBtn").addEventListener("click", openSettings);
