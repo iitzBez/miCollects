@@ -181,6 +181,10 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .more .btn{flex:1}
 .backup-text{width:100%;min-height:120px;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:8px;margin-top:10px}
 
+.settings-tabs{display:flex;gap:4px;margin:4px 0 18px;border-bottom:1px solid var(--line)}
+.stab{flex:1;background:none;border:0;border-bottom:2px solid transparent;padding:10px 4px;font:650 14px/1.2 var(--body);color:var(--muted);cursor:pointer}
+.stab[aria-selected="true"]{color:var(--brass);border-bottom-color:var(--brass)}
+
 .toast{position:fixed;left:50%;bottom:calc(150px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;font-weight:600;z-index:20;max-width:calc(100% - 32px);text-align:center}
 [hidden]{display:none!important}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -320,7 +324,8 @@ const store = {
   async clear() { if (!this.db) { this.mem.clear(); return; } await this.req(this.os("readwrite").clear()); }
 };
 
-const settings = { currency: "R", layout: "grid2", geminiKey: "", onboarded: false, lastSynced: null, wishlistShareToken: null };
+const settings = { currency: "R", layout: "grid2", geminiKey: "", onboarded: false, lastSynced: null, wishlistShareToken: null,
+  firstName: "", lastName: "", phone: "", theme: "system" };
 function timeAgo(ts) {
   if (!ts) return "";
   const s = Math.max(1, Math.round((Date.now() - ts) / 1000));
@@ -864,6 +869,7 @@ async function fillFromUrl(it, paintPhotos, dup) {
 
 /* ---------- Item form ---------- */
 let editing = null, photos = [];
+let settingsTab = "account", authMode = null;
 const MAXP = 8;
 
 /* Adds a tappable "x" to every plain text-ish input/textarea inside `root` that doesn't already
@@ -927,6 +933,7 @@ function openForm(item, convertTo) {
     it.list = "owned"; it.qty = it.qty || 1;
     if (it.paid == null && it.target) it.paid = it.target;
     if (it.value == null && it.target) it.value = it.target;
+    if (!it.purchaseDate) it.purchaseDate = new Date().toISOString().slice(0, 10);
   } else if (convertTo === "wish") {
     it.list = "wish";
     if (it.target == null) it.target = it.value != null ? it.value : it.paid;
@@ -1003,6 +1010,8 @@ function openForm(item, convertTo) {
       <div class="field"><label for="f-qty">Quantity</label>
         <input id="f-qty" type="number" inputmode="numeric" min="1" step="1" value="${val(it.qty || 1)}"></div>
     </div>
+    <div class="field"><label for="f-purchdate">Purchase date</label>
+      <input id="f-purchdate" type="date" value="${val(it.purchaseDate)}"></div>
     <div class="row">
       <div class="field"><label for="f-paid">Price paid (${cur})</label>
         <input id="f-paid" type="number" inputmode="decimal" min="0" step="any" value="${val(it.paid)}"></div>
@@ -1130,7 +1139,7 @@ async function save() {
     url: normUrl(v("f-url")), productUrl: normUrl(v("f-producturl")), notes: v("f-notes"), photos: photos.slice(), photo: photos[0] || null, updated: Date.now(),
     scope: it.scope || currentScope });
   if (it.list === "owned") {
-    Object.assign(it, { condition: v("f-cond"), qty: Math.max(1, parseInt(v("f-qty"), 10) || 1), paid: num(v("f-paid")), value: num(v("f-value")) });
+    Object.assign(it, { condition: v("f-cond"), qty: Math.max(1, parseInt(v("f-qty"), 10) || 1), paid: num(v("f-paid")), value: num(v("f-value")), purchaseDate: v("f-purchdate") || null });
   } else {
     Object.assign(it, { target: num(v("f-target")), priority: +v("f-pri") || 2 });
   }
@@ -1438,41 +1447,56 @@ if (cloudEnabled) {
 }
 
 /* ---------- Settings + backup ---------- */
-function openSettings() {
-  $("#sheetBody").innerHTML = `
-    <h2 id="sheetTitle">Settings</h2>
-    <h3>Account &amp; sync</h3>
-    ${!cloudEnabled ? `<p class="hint">Cloud sync isn’t set up for this build yet.</p>` : cloudUser ? `
-    <p class="hint">Signed in as ${esc(cloudUser.email)}. Your collection and settings sync to the cloud automatically when you save; photos go too.</p>
+const isValidEmail = s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+
+function authAreaHtml() {
+  if (!authMode) {
+    return `
+    <p class="hint">Sign in to back up your collection to the cloud, sync it to another device, and manage your account, currency, backup and photo-recognition settings.</p>
     <div class="actions">
-      <button class="btn ghost" id="syncBtn">Sync now</button>
-      <button class="btn ghost" id="signOutBtn">Sign out</button>
-    </div>
-    <p class="hint" id="authHint">${settings.lastSynced ? `Last synced ${esc(timeAgo(settings.lastSynced))}.` : ""}</p>` : `
-    <p class="hint">Sign in to back up your collection to the cloud, sync it to another device, and manage currency, backup and photo-recognition settings.</p>
+      <button class="btn primary" id="showSignInBtn">Sign in</button>
+      <button class="btn ghost" id="showSignUpBtn">Create account</button>
+    </div>`;
+  }
+  const signUp = authMode === "signup";
+  return `
     <div class="field"><label for="s-email">Email</label>
-      <input id="s-email" name="email" type="email" autocomplete="email" placeholder="you@example.com"></div>
+      <input id="s-email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com"></div>
     <div class="field"><label for="s-pass">Password</label>
-      <input id="s-pass" name="password" type="password" autocomplete="current-password" placeholder="For new accounts: 8+ chars, a number, a symbol"></div>
+      <input id="s-pass" name="password" type="password" autocomplete="${signUp ? "new-password" : "current-password"}" placeholder="${signUp ? "8+ chars, a number, a symbol" : "Your password"}"></div>
     <div class="actions">
-      <button class="btn primary" id="signInBtn">Sign in</button>
-      <button class="btn ghost" id="signUpBtn">Create account</button>
+      <button class="btn primary" id="${signUp ? "signUpBtn" : "signInBtn"}">${signUp ? "Create account" : "Sign in"}</button>
+      <button class="btn ghost" id="authBackBtn">Back</button>
     </div>
-    <button type="button" class="link plain" id="forgotBtn">Forgot password?</button>
-    <p class="hint" id="authHint"></p>`}
-    ${cloudUser ? `
+    ${!signUp ? `<button type="button" class="link plain" id="forgotBtn">Forgot password?</button>` : ""}
+    <p class="hint" id="authHint"></p>`;
+}
+
+function accountTabHtml() {
+  return `
+    <div class="field"><label for="s-email2">Email</label><input id="s-email2" data-no-clear value="${esc(cloudUser.email)}" disabled></div>
+    <div class="row">
+      <div class="field"><label for="s-fname">Name</label><input id="s-fname" value="${esc(settings.firstName)}" autocomplete="given-name"></div>
+      <div class="field"><label for="s-lname">Surname</label><input id="s-lname" value="${esc(settings.lastName)}" autocomplete="family-name"></div>
+    </div>
+    <div class="field"><label for="s-phone">Cellphone number</label>
+      <input id="s-phone" type="tel" inputmode="tel" value="${esc(settings.phone)}" autocomplete="tel" placeholder="e.g. 082 123 4567"></div>
+    <div class="actions"><button class="btn ghost" id="acctSaveBtn">Save details</button></div>
+    <p class="hint" id="acctHint"></p>
+    <h3>Password</h3>
+    <p class="hint">Send a password reset link to ${esc(cloudUser.email)}.</p>
+    <div class="actions"><button class="btn ghost" id="acctResetBtn">Reset password</button></div>
+    <p class="hint" id="acctResetHint"></p>`;
+}
+
+function generalTabHtml() {
+  return `
+    <h3>Sync</h3>
+    <div class="actions"><button class="btn ghost" id="syncBtn">Sync now</button></div>
+    <p class="hint" id="authHint">${settings.lastSynced ? `Last synced ${esc(timeAgo(settings.lastSynced))}.` : ""}</p>
     <h3>Currency</h3>
     <div class="field"><label for="s-cur">Currency symbol</label>
       <input id="s-cur" value="${esc(settings.currency)}" maxlength="4" autocomplete="off"></div>
-    <h3>Photo recognition</h3>
-    <p class="hint">To auto-fill details from a photo (Add a Photo), paste in a free Gemini API key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Without one, photos are still added, just not recognised.</p>
-    <div class="field"><label for="s-gemini">Gemini API key</label>
-      <div class="url-row">
-        <input id="s-gemini" type="password" value="${esc(settings.geminiKey)}" placeholder="Paste your API key" autocomplete="off">
-        <button type="button" class="btn primary" id="geminiSaveBtn">Save</button>
-      </div>
-      <p class="hint" id="geminiHint"></p>
-    </div>
     <h3>Share wishlist</h3>
     <p class="hint">Send a link anyone can open in a browser — no account or app install needed — to see your wishlist with target prices and priority, so they know what to get you.</p>
     <div class="actions"><button class="btn primary" id="shareBtn">Share wishlist</button></div>
@@ -1485,65 +1509,133 @@ function openSettings() {
       <input type="file" id="impIn" accept="application/json,.json,text/plain,.txt" hidden>
     </div>
     <div id="backupOut"></div>
-    <div class="more"><button class="btn danger" id="wipeBtn">Delete everything</button></div>` : ""}
+    <h3>App theme</h3>
+    <div class="field"><label for="s-theme">Theme</label>
+      <select id="s-theme">
+        <option value="system"${settings.theme === "system" ? " selected" : ""}>System</option>
+        <option value="light"${settings.theme === "light" ? " selected" : ""}>Light</option>
+        <option value="dark"${settings.theme === "dark" ? " selected" : ""}>Dark</option>
+      </select></div>
+    <p class="hint">Just remembers your choice for now — switching the look isn’t wired up yet.</p>
+    <div class="more"><button class="btn danger" id="wipeBtn">Delete everything</button></div>`;
+}
+
+function apiTabHtml() {
+  return `
+    <h3>Photo recognition</h3>
+    <p class="hint">To auto-fill details from a photo (Add a Photo), paste in a free Gemini API key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Without one, photos are still added, just not recognised.</p>
+    <div class="field"><label for="s-gemini">Gemini API key</label>
+      <div class="url-row">
+        <input id="s-gemini" type="password" value="${esc(settings.geminiKey)}" placeholder="Paste your API key" autocomplete="off">
+        <button type="button" class="btn primary" id="geminiSaveBtn">Save</button>
+      </div>
+      <p class="hint" id="geminiHint"></p>
+    </div>`;
+}
+
+function openSettings() {
+  const tabs = [["account", "My Account"], ["general", "General"], ["api", "API"]];
+  const tabBody = !cloudUser ? "" : settingsTab === "account" ? accountTabHtml() : settingsTab === "api" ? apiTabHtml() : generalTabHtml();
+  $("#sheetBody").innerHTML = `
+    <h2 id="sheetTitle">Settings</h2>
+    ${!cloudEnabled ? `<p class="hint">Cloud sync isn’t set up for this build yet.</p>` : !cloudUser ? authAreaHtml() : `
+    <div class="settings-tabs" id="settingsTabs" role="tablist">
+      ${tabs.map(([k, l]) => `<button type="button" class="stab" data-stab="${k}" role="tab" aria-selected="${settingsTab === k}">${esc(l)}</button>`).join("")}
+    </div>
+    <div id="settingsTabBody">${tabBody}</div>
+    <div class="actions"><button class="btn ghost" id="signOutBtn">Sign out</button></div>`}
     <div class="actions"><button class="btn primary" id="sDone">Done</button></div>`;
-  if (cloudEnabled && cloudUser) {
-    $("#syncBtn").addEventListener("click", () => cloudPullAll());
-    $("#signOutBtn").addEventListener("click", () => cloudSignOut());
-  } else if (cloudEnabled) {
-    const authHint = $("#authHint");
-    const authAction = async (fn, okMsg, requirePolicy) => {
-      const email = $("#s-email").value.trim(), pass = $("#s-pass").value;
-      if (!email || !pass) { authHint.textContent = "Enter an email and password."; return; }
-      if (requirePolicy) { const err = passwordPolicyError(pass); if (err) { authHint.textContent = err; return; } }
-      authHint.textContent = "Working…";
-      try { await fn(email, pass); toast(okMsg); } catch (e) { authHint.textContent = authErrorMsg(e); }
-    };
-    $("#signInBtn").addEventListener("click", () => authAction(cloudSignIn, "Signed in", false));
-    $("#signUpBtn").addEventListener("click", () => authAction(cloudSignUp, "Account created", true));
-    $("#forgotBtn").addEventListener("click", async () => {
-      const email = $("#s-email").value.trim();
-      if (!email) { authHint.textContent = "Enter your email first."; return; }
-      try { await cloudResetPassword(email); authHint.textContent = "Check your email for a reset link."; }
-      catch (e) { authHint.textContent = authErrorMsg(e); }
-    });
-  }
-  if (cloudUser) {
-    $("#s-cur").addEventListener("input", e => { settings.currency = e.target.value; saveSettings(); render(); cloudPushSettings(); });
-    $("#s-gemini").addEventListener("input", e => { settings.geminiKey = e.target.value.trim(); });
-    $("#s-gemini").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#geminiSaveBtn").click(); } });
-    $("#geminiSaveBtn").addEventListener("click", async () => {
-      settings.geminiKey = $("#s-gemini").value.trim(); saveSettings();
-      const hint = $("#geminiHint");
-      if (cloudUser) { hint.textContent = "Saving…"; await cloudPushSettings(); hint.textContent = "Saved."; }
-      else hint.textContent = "Saved.";
-      toast("API key saved");
-    });
-    $("#shareBtn").addEventListener("click", async () => {
-      const btn = $("#shareBtn"), hint = $("#shareHint");
-      btn.disabled = true; const original = btn.textContent; btn.textContent = "Sharing…";
-      try {
-        await createShare();
-        await openShareSheet(shareUrl(settings.wishlistShareToken), "My miCollects wishlist");
-        openSettings();
-      } catch (e) { hint.textContent = "Couldn’t share: " + authErrorMsg(e); btn.disabled = false; btn.textContent = original; }
-    });
-    if (settings.wishlistShareToken) {
-      const shareOff = $("#shareOffBtn");
-      if (shareOff) shareOff.addEventListener("click", async () => {
-        await revokeShare(); toast("Sharing turned off"); openSettings();
+
+  if (cloudEnabled && !cloudUser) {
+    if (!authMode) {
+      $("#showSignInBtn").addEventListener("click", () => { authMode = "signin"; openSettings(); });
+      $("#showSignUpBtn").addEventListener("click", () => { authMode = "signup"; openSettings(); });
+    } else {
+      const authHint = $("#authHint");
+      $("#authBackBtn").addEventListener("click", () => { authMode = null; openSettings(); });
+      const authAction = async (fn, okMsg, requirePolicy) => {
+        const email = $("#s-email").value.trim(), pass = $("#s-pass").value;
+        if (!email || !pass) { authHint.textContent = "Enter an email and password."; return; }
+        if (!isValidEmail(email)) { authHint.textContent = "Enter a valid email address."; return; }
+        if (requirePolicy) { const err = passwordPolicyError(pass); if (err) { authHint.textContent = err; return; } }
+        authHint.textContent = "Working…";
+        try { await fn(email, pass); toast(okMsg); authMode = null; } catch (e) { authHint.textContent = authErrorMsg(e); }
+      };
+      if (authMode === "signin") $("#signInBtn").addEventListener("click", () => authAction(cloudSignIn, "Signed in", false));
+      if (authMode === "signup") $("#signUpBtn").addEventListener("click", () => authAction(cloudSignUp, "Account created", true));
+      const forgotBtn = $("#forgotBtn");
+      if (forgotBtn) forgotBtn.addEventListener("click", async () => {
+        const email = $("#s-email").value.trim();
+        if (!email) { authHint.textContent = "Enter your email first."; return; }
+        if (!isValidEmail(email)) { authHint.textContent = "Enter a valid email address."; return; }
+        try { await cloudResetPassword(email); authHint.textContent = "Check your email for a reset link."; }
+        catch (e) { authHint.textContent = authErrorMsg(e); }
       });
     }
-    $("#expBtn").addEventListener("click", exportBackup);
-    $("#impIn").addEventListener("change", importBackup);
-    const wipe = $("#wipeBtn");
-    wipe.addEventListener("click", () => armThen(wipe, "Tap again to delete all items", async () => {
-      const ids = state.items.map(i => i.id);
-      for (const id of ids) await store.del(id);
-      state.items = []; closeSheet(); render(); toast("All items deleted");
-      ids.forEach(cloudDeleteItem);
-      refreshShareIfActive();
-    }));
+  }
+
+  if (cloudUser) {
+    $("#settingsTabs").addEventListener("click", e => {
+      const b = e.target.closest("[data-stab]"); if (!b || b.dataset.stab === settingsTab) return;
+      settingsTab = b.dataset.stab; openSettings();
+    });
+    $("#signOutBtn").addEventListener("click", () => cloudSignOut());
+
+    if (settingsTab === "account") {
+      $("#acctSaveBtn").addEventListener("click", async () => {
+        settings.firstName = $("#s-fname").value.trim();
+        settings.lastName = $("#s-lname").value.trim();
+        settings.phone = $("#s-phone").value.trim();
+        saveSettings();
+        const hint = $("#acctHint"); hint.textContent = "Saving…";
+        try { await cloudPushSettings(); hint.textContent = "Saved."; toast("Account details saved"); }
+        catch (e) { hint.textContent = "Saved here, but couldn’t sync."; }
+      });
+      $("#acctResetBtn").addEventListener("click", async () => {
+        const hint = $("#acctResetHint"); hint.textContent = "Sending…";
+        try { await cloudResetPassword(cloudUser.email); hint.textContent = "Check your email for a reset link."; }
+        catch (e) { hint.textContent = "Couldn’t send: " + authErrorMsg(e); }
+      });
+    } else if (settingsTab === "general") {
+      $("#syncBtn").addEventListener("click", () => cloudPullAll());
+      $("#s-cur").addEventListener("input", e => { settings.currency = e.target.value; saveSettings(); render(); cloudPushSettings(); });
+      $("#s-theme").addEventListener("change", e => { settings.theme = e.target.value; saveSettings(); });
+      $("#shareBtn").addEventListener("click", async () => {
+        const btn = $("#shareBtn"), hint = $("#shareHint");
+        btn.disabled = true; const original = btn.textContent; btn.textContent = "Sharing…";
+        try {
+          await createShare();
+          await openShareSheet(shareUrl(settings.wishlistShareToken), "My miCollects wishlist");
+          openSettings();
+        } catch (e) { hint.textContent = "Couldn’t share: " + authErrorMsg(e); btn.disabled = false; btn.textContent = original; }
+      });
+      if (settings.wishlistShareToken) {
+        const shareOff = $("#shareOffBtn");
+        if (shareOff) shareOff.addEventListener("click", async () => {
+          await revokeShare(); toast("Sharing turned off"); openSettings();
+        });
+      }
+      $("#expBtn").addEventListener("click", exportBackup);
+      $("#impIn").addEventListener("change", importBackup);
+      const wipe = $("#wipeBtn");
+      wipe.addEventListener("click", () => armThen(wipe, "Tap again to delete all items", async () => {
+        const ids = state.items.map(i => i.id);
+        for (const id of ids) await store.del(id);
+        state.items = []; closeSheet(); render(); toast("All items deleted");
+        ids.forEach(cloudDeleteItem);
+        refreshShareIfActive();
+      }));
+    } else if (settingsTab === "api") {
+      $("#s-gemini").addEventListener("input", e => { settings.geminiKey = e.target.value.trim(); });
+      $("#s-gemini").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#geminiSaveBtn").click(); } });
+      $("#geminiSaveBtn").addEventListener("click", async () => {
+        settings.geminiKey = $("#s-gemini").value.trim(); saveSettings();
+        const hint = $("#geminiHint");
+        if (cloudUser) { hint.textContent = "Saving…"; await cloudPushSettings(); hint.textContent = "Saved."; }
+        else hint.textContent = "Saved.";
+        toast("API key saved");
+      });
+    }
   }
   $("#sDone").addEventListener("click", closeSheet);
   addClearButtons($("#sheetBody"));
