@@ -67,7 +67,7 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 #signOutBtn{margin-left:auto}
 .select-bar{display:flex;align-items:center;gap:10px;padding:6px 16px 10px;max-width:1100px;margin:0 auto;flex-wrap:wrap}
 .select-bar .select-count{color:var(--muted);font-size:14px;flex:1}
-.select-bar .select-actions{display:flex;gap:8px}
+#selectShareBtn, #selectDeleteBtn{margin-left:auto}
 .sel-dot{position:absolute;top:8px;left:8px;width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:rgba(15,23,42,.35);box-shadow:0 1px 3px rgba(15,23,42,.3);z-index:1}
 .card.selected .sel-dot{background:var(--brass);border-color:var(--brass)}
 .card.selected .sel-dot::after{content:"";position:absolute;left:7px;top:3px;width:6px;height:11px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
@@ -281,13 +281,10 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 <div class="select-bar" id="selectBar" hidden>
   <button type="button" class="btn ghost" id="selectAllBtn">Select all</button>
   <span class="select-count" id="selectCount">0 selected</span>
-  <div class="select-actions">
-    <button type="button" class="btn ghost" id="selectCancelBtn">Cancel</button>
-    <button type="button" class="btn primary" id="selectShareBtn">Share</button>
-    <button type="button" class="lbtn danger" id="selectDeleteBtn" aria-label="Delete selected items">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-    </button>
-  </div>
+  <button type="button" class="btn primary" id="selectShareBtn">Share</button>
+  <button type="button" class="lbtn danger" id="selectDeleteBtn" aria-label="Delete selected items">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+  </button>
 </div>
 <div class="pill-field" id="pillField" role="group" aria-label="Filter by"></div>
 <div class="chips" id="chips" role="toolbar" aria-label="Filter"></div>
@@ -367,7 +364,7 @@ const LAYOUTS = ["grid1", "grid2", "grid3", "list"];
 if (!LAYOUTS.includes(settings.layout)) settings.layout = "grid2";
 
 /* ---------- State ---------- */
-const state = { tab: "owned", q: "", cat: "All", pillField: "brand", pillVal: "All", sort: "recent", group: "none", layout: settings.layout, items: [], selecting: false, selected: new Set() };
+const state = { tab: "owned", q: "", cat: "All", pillField: "brand", pillVal: "All", sort: "recent", group: "none", layout: settings.layout, items: [], selecting: false, selectMode: null, selected: new Set() };
 const PRI = { 3: "High", 2: "Medium", 1: "Low" };
 const CONDITIONS = ["", "Sealed / new in box", "Mint", "Near mint", "Excellent", "Good", "Fair", "Poor"];
 const price = i => i.list === "owned" ? (+i.value || 0) * (+i.qty || 1) : (+i.target || 0);
@@ -444,7 +441,8 @@ function render() {
   if (state.selecting) for (const id of [...state.selected]) if (!tabItems.some(i => i.id === id)) state.selected.delete(id);
   const canBulkShare = cloudEnabled && !!cloudUser;
   $("#shareSelectBtn").hidden = !canBulkShare;
-  $("#selectShareBtn").hidden = !canBulkShare;
+  $("#selectShareBtn").hidden = state.selectMode !== "share";
+  $("#selectDeleteBtn").hidden = state.selectMode !== "delete";
   $("#layoutBar").hidden = state.selecting;
   $("#selectBar").hidden = !state.selecting;
 
@@ -537,12 +535,42 @@ function closeSheet() {
   hideSheet();
   try { if (history.state && history.state.sheet) history.back(); } catch (e) {}
 }
-addEventListener("popstate", () => { if (sheetOpen) hideSheet(); });
+
+/* Multi-select (long-press or the Share icon) also pushes a history entry on entry, the same way
+   showSheet() does -- so the hardware/gesture back button exits it instead of closing the app, with
+   no on-screen Cancel button needed. exitSelectModeAndPop() is for exiting programmatically (e.g.
+   after a successful delete/share): it resets state AND consumes the pushed entry via history.back()
+   so the stack stays balanced either way the mode gets exited. */
+function enterSelectMode(mode, ids) {
+  state.selecting = true; state.selectMode = mode; state.selected = new Set(ids || []);
+  try { history.pushState({ select: 1 }, ""); } catch (e) {}
+  render();
+}
+function exitSelectMode() {
+  if (!state.selecting) return;
+  state.selecting = false; state.selectMode = null; state.selected = new Set();
+  render();
+}
+function exitSelectModeAndPop() {
+  if (!state.selecting) return;
+  exitSelectMode();
+  try { if (history.state && history.state.select) history.back(); } catch (e) {}
+}
+
+addEventListener("popstate", () => {
+  if (state.selecting) { exitSelectMode(); return; }
+  if (sheetOpen) hideSheet();
+});
 $("#scrim").addEventListener("click", closeSheet);
-addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
+addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (state.selecting) { exitSelectModeAndPop(); return; }
+  closeSheet();
+});
 
 /* Installing a backButton listener hands Capacitor's hardware-back handling to us: without one it
-   just exits the app. Closing the sheet via history.back() reuses the popstate handler above. */
+   just exits the app. Closing the sheet/exiting select mode via history.back() reuses the popstate
+   handler above. */
 (() => {
   const P = window.Capacitor && window.Capacitor.Plugins;
   if (!P || !P.App) return;
@@ -1788,8 +1816,7 @@ $("#grid").addEventListener("pointerdown", e => {
   pressStart = { x: e.clientX, y: e.clientY };
   pressTimer = setTimeout(() => {
     longPressFired = true;
-    state.selecting = true; state.selected = new Set([c.dataset.id]);
-    render();
+    enterSelectMode("delete", [c.dataset.id]);
     if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
   }, LONG_PRESS_MS);
 });
@@ -1829,7 +1856,7 @@ $("#group").addEventListener("change", e => { state.group = e.target.value; rend
 $("#layoutBar").addEventListener("click", e => {
   const b = e.target.closest("[data-layout]");
   if (b) { state.layout = settings.layout = b.dataset.layout; saveSettings(); render(); cloudPushSettings(); return; }
-  if (e.target.closest("#shareSelectBtn")) { state.selecting = true; state.selected = new Set(); render(); }
+  if (e.target.closest("#shareSelectBtn")) enterSelectMode("share");
 });
 $("#selectAllBtn").addEventListener("click", () => {
   const visIds = visible().map(i => i.id);
@@ -1837,14 +1864,13 @@ $("#selectAllBtn").addEventListener("click", () => {
   state.selected = allSelected ? new Set() : new Set(visIds);
   render();
 });
-$("#selectCancelBtn").addEventListener("click", () => { state.selecting = false; state.selected = new Set(); render(); });
 $("#selectShareBtn").addEventListener("click", async () => {
   if (!state.selected.size) { toast("Select at least one item"); return; }
   const btn = $("#selectShareBtn"); btn.disabled = true; const original = btn.textContent; btn.textContent = "Sharing…";
   try {
     const items = state.items.filter(i => state.selected.has(i.id));
     await shareItemsNow(items);
-    state.selecting = false; state.selected = new Set(); render();
+    exitSelectModeAndPop();
   } catch (e) { toast("Couldn’t share: " + authErrorMsg(e)); btn.disabled = false; btn.textContent = original; }
 });
 $("#selectDeleteBtn").addEventListener("click", async () => {
@@ -1857,15 +1883,15 @@ $("#selectDeleteBtn").addEventListener("click", async () => {
     await store.del(id);
   }
   state.items = state.items.filter(i => !state.selected.has(i.id));
-  state.selecting = false; state.selected = new Set();
-  render();
+  exitSelectModeAndPop();
   toast(`Deleted ${ids.length} ${ids.length === 1 ? "item" : "items"}`);
   ids.forEach(cloudDeleteItem);
   refreshShareIfActive();
 });
 document.querySelectorAll(".nav button").forEach(b => b.addEventListener("click", () => {
   if (state.tab === b.dataset.tab) return;
-  state.tab = b.dataset.tab; state.cat = "All"; state.pillVal = "All"; state.selecting = false; state.selected = new Set(); render(); scrollTo({ top: 0 });
+  exitSelectModeAndPop();
+  state.tab = b.dataset.tab; state.cat = "All"; state.pillVal = "All"; render(); scrollTo({ top: 0 });
 }));
 $("#addBtn").addEventListener("click", () => openForm(null));
 $("#settingsBtn").addEventListener("click", openSettings);
