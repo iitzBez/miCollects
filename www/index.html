@@ -399,6 +399,16 @@ addEventListener("popstate", () => { if (sheetOpen) hideSheet(); });
 $("#scrim").addEventListener("click", closeSheet);
 addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
 
+/* Installing a backButton listener hands Capacitor's hardware-back handling to us: without one it
+   just exits the app. Closing the sheet via history.back() reuses the popstate handler above. */
+(() => {
+  const P = window.Capacitor && window.Capacitor.Plugins;
+  if (!P || !P.App) return;
+  P.App.addListener("backButton", ({ canGoBack }) => {
+    if (canGoBack) history.back(); else P.App.exitApp();
+  });
+})();
+
 /* ---------- Photos ---------- */
 function compressSrc(src) {
   return new Promise((res, rej) => {
