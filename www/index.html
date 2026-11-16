@@ -301,7 +301,7 @@ const store = {
   async clear() { if (!this.db) { this.mem.clear(); return; } await this.req(this.os("readwrite").clear()); }
 };
 
-const settings = { currency: "R", layout: "grid2", geminiKey: "", onboarded: false, lastSynced: null };
+const settings = { currency: "R", layout: "grid2", geminiKey: "", onboarded: false, lastSynced: null, wishlistShareToken: null };
 function timeAgo(ts) {
   if (!ts) return "";
   const s = Math.max(1, Math.round((Date.now() - ts) / 1000));
@@ -1055,7 +1055,7 @@ function openForm(item, convertTo) {
     await store.del(it.id);
     state.items = state.items.filter(i => i.id !== it.id);
     closeSheet(); render(); toast("Deleted");
-    cloudDeleteItem(it.id);
+    cloudDeleteItem(it.id).then(() => refreshShareIfActive());
   }));
   addClearButtons($("#sheetBody"));
   showSheet();
@@ -1082,7 +1082,7 @@ async function save() {
   if (convert || isNew) state.tab = it.list;
   closeSheet(); render();
   toast(convert ? (it.list === "owned" ? "Added to your collection" : "Moved to your wishlist") : isNew ? "Saved" : "Changes saved");
-  cloudPushItem(it).catch(() => toast("Saved here, but couldn’t sync to the cloud."));
+  cloudPushItem(it).then(() => refreshShareIfActive()).catch(() => toast("Saved here, but couldn’t sync to the cloud."));
 }
 
 function armThen(btn, armedLabel, action) {
@@ -1243,6 +1243,56 @@ async function cloudPullAll(silent) {
   }
 }
 
+/* ---------- Wishlist sharing (public, read-only link) ----------
+   A share is a snapshot of the current wishlist written to a top-level "shares/{token}" Firestore
+   document -- separate from "users/{uid}/..." so it can be made publicly readable by its exact token
+   (an unguessable id) without exposing anything else. Security rules allow "get" (fetch by exact id)
+   but not "list" (browse/enumerate), so a token can't be discovered, only used if you already have it. */
+const SHARE_BASE_URL = "https://iitzbez.github.io/miCollects/share.html";
+const shareUrl = token => `${SHARE_BASE_URL}?id=${token}`;
+
+async function buildShareItems() {
+  const wish = state.items.filter(i => i.list === "wish");
+  for (const it of wish) {
+    if ((it.cloudPhotos || []).length < (it.photos || []).length) {
+      try { await cloudPushItem(it); } catch (e) {}
+    }
+  }
+  return wish
+    .slice()
+    .sort((a, b) => (b.priority || 2) - (a.priority || 2) || (a.name || "").localeCompare(b.name || ""))
+    .map(it => ({
+      name: it.name || "", brand: it.brand || "", category: it.category || "", scale: it.scale || "",
+      description: it.description || "", target: it.target ?? null, priority: it.priority || 2,
+      photo: (it.cloudPhotos && it.cloudPhotos[0]) || null
+    }));
+}
+
+async function pushShareSnapshot(token) {
+  const items = await buildShareItems();
+  await fbDb.collection("shares").doc(token).set({ uid: cloudUser.uid, currency: settings.currency, updated: Date.now(), items });
+}
+
+async function createShare() {
+  const token = settings.wishlistShareToken || uid();
+  await pushShareSnapshot(token);
+  settings.wishlistShareToken = token; saveSettings(); await cloudPushSettings();
+}
+
+/* Fire-and-forget: keeps an already-active share link fresh whenever the wishlist changes. A no-op
+   when sharing isn't on, so it's safe to call after every save/delete regardless. */
+async function refreshShareIfActive() {
+  if (!cloudEnabled || !cloudUser || !settings.wishlistShareToken) return;
+  try { await pushShareSnapshot(settings.wishlistShareToken); } catch (e) {}
+}
+
+async function revokeShare() {
+  if (!settings.wishlistShareToken) return;
+  const token = settings.wishlistShareToken;
+  try { await fbDb.collection("shares").doc(token).delete(); } catch (e) {}
+  settings.wishlistShareToken = null; saveSettings(); await cloudPushSettings();
+}
+
 function refreshSettingsIfOpen() {
   if (sheetOpen && $("#sheetTitle") && $("#sheetTitle").textContent === "Settings") openSettings();
 }
@@ -1302,6 +1352,23 @@ function openSettings() {
       </div>
       <p class="hint" id="geminiHint"></p>
     </div>
+    <h3>Share wishlist</h3>
+    <p class="hint">Create a link anyone can open in a browser — no account or app install needed — to see your wishlist with target prices and priority, so they know what to get you.</p>
+    ${settings.wishlistShareToken ? `
+    <div class="field"><label for="s-share">Your share link</label>
+      <div class="url-row">
+        <input id="s-share" readonly data-no-clear value="${esc(shareUrl(settings.wishlistShareToken))}">
+        <button type="button" class="btn ghost" id="shareCopyBtn">Copy</button>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="shareSendBtn">Share</button>
+      <button class="btn ghost" id="shareUpdateBtn">Update now</button>
+    </div>
+    <div class="more"><button class="btn danger" id="shareOffBtn">Turn off sharing</button></div>
+    <p class="hint" id="shareHint"></p>` : `
+    <div class="actions"><button class="btn primary" id="shareOnBtn">Create share link</button></div>
+    <p class="hint" id="shareHint"></p>`}
     <h3>Backup</h3>
     <p class="hint">Your collection already syncs to the cloud, but export a local copy now and then too.</p>
     <div class="actions">
@@ -1344,6 +1411,35 @@ function openSettings() {
       else hint.textContent = "Saved.";
       toast("API key saved");
     });
+    if (settings.wishlistShareToken) {
+      $("#shareCopyBtn").addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(shareUrl(settings.wishlistShareToken)); toast("Link copied"); }
+        catch (e) { const f = $("#s-share"); f.focus(); f.select(); }
+      });
+      $("#shareSendBtn").addEventListener("click", async () => {
+        const url = shareUrl(settings.wishlistShareToken);
+        const P = window.Capacitor && window.Capacitor.Plugins;
+        if (P && P.Share) { try { await P.Share.share({ title: "My miCollects wishlist", url }); return; } catch (e) { if (/cancel/i.test(String(e && e.message))) return; } }
+        try { if (navigator.share) { await navigator.share({ title: "My miCollects wishlist", url }); return; } } catch (e) { if (e && e.name === "AbortError") return; }
+        try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch (e) {}
+      });
+      $("#shareUpdateBtn").addEventListener("click", async () => {
+        const hint = $("#shareHint"); hint.textContent = "Updating…";
+        try { await pushShareSnapshot(settings.wishlistShareToken); hint.textContent = "Updated just now."; toast("Share link updated"); }
+        catch (e) { hint.textContent = "Couldn’t update: " + authErrorMsg(e); }
+      });
+      const shareOff = $("#shareOffBtn");
+      shareOff.addEventListener("click", () => armThen(shareOff, "Tap again to turn off", async () => {
+        await revokeShare(); toast("Sharing turned off"); openSettings();
+      }));
+    } else {
+      $("#shareOnBtn").addEventListener("click", async () => {
+        const btn = $("#shareOnBtn"), hint = $("#shareHint");
+        btn.disabled = true; hint.textContent = "Creating your link…";
+        try { await createShare(); toast("Share link created"); openSettings(); }
+        catch (e) { hint.textContent = "Couldn’t create link: " + authErrorMsg(e); btn.disabled = false; }
+      });
+    }
     $("#expBtn").addEventListener("click", exportBackup);
     $("#impIn").addEventListener("change", importBackup);
     const wipe = $("#wipeBtn");
@@ -1352,6 +1448,7 @@ function openSettings() {
       for (const id of ids) await store.del(id);
       state.items = []; closeSheet(); render(); toast("All items deleted");
       ids.forEach(cloudDeleteItem);
+      refreshShareIfActive();
     }));
   }
   $("#sDone").addEventListener("click", closeSheet);
