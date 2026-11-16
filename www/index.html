@@ -503,8 +503,24 @@ const nativeHttp = () => {
   const C = window.Capacitor;
   return C && C.isNativePlatform && C.isNativePlatform() && C.Plugins && C.Plugins.CapacitorHttp ? C.Plugins.CapacitorHttp : null;
 };
+/* Strips trailing punctuation that's almost never actually part of a URL when pasted at the end of a
+   sentence (a period, a closing bracket with no matching opener inside the URL, etc.). */
+function trimUrlPunct(u) {
+  let prev;
+  do {
+    prev = u;
+    u = u.replace(/[.,;:!?'"]+$/, "");
+    if (/\)$/.test(u) && (u.match(/\(/g) || []).length < (u.match(/\)/g) || []).length) u = u.slice(0, -1);
+    if (/\]$/.test(u) && (u.match(/\[/g) || []).length < (u.match(/\]/g) || []).length) u = u.slice(0, -1);
+  } while (u !== prev);
+  return u;
+}
+/* Shared/copied links often come with surrounding text ("Check this out: https://... Price varies"
+   from Checkers, Pick n Pay ASAP!, etc.) -- pull out just the URL instead of requiring a clean paste. */
 const normUrl = s => {
   s = String(s || "").trim(); if (!s) return "";
+  const m = s.match(/https?:\/\/[^\s<>"']+/i);
+  s = m ? trimUrlPunct(m[0]) : s;
   if (!/^https?:\/\//i.test(s)) s = "https://" + s;
   try { const u = new URL(s); return /^https?:$/.test(u.protocol) ? u.href : ""; } catch (e) { return ""; }
 };
