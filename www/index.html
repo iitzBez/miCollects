@@ -295,7 +295,7 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
   <button class="lbtn" type="button" data-layout="list" aria-label="List view" aria-pressed="false">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="6" height="6" rx="1"/><line x1="11" y1="8" x2="21" y2="8"/><rect x="3" y="14" width="6" height="6" rx="1"/><line x1="11" y1="17" x2="21" y2="17"/></svg></button>
   <button class="lbtn" type="button" id="shareSelectBtn" aria-label="Share wishlist items" hidden>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v14"/></svg></button>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="10.51" x2="15.42" y2="6.49"/><line x1="8.59" y1="13.49" x2="15.42" y2="17.51"/></svg></button>
 </div>
 <div class="select-bar" id="selectBar" hidden>
   <button type="button" class="btn ghost" id="selectAllBtn">Select all</button>
@@ -1206,7 +1206,7 @@ function openForm(item, convertTo) {
       <button class="btn ghost" id="cancelBtn">Cancel</button>
     </div>
     ${canItemShare ? `<div class="field" id="itemShareBox">
-      <div class="actions"><button type="button" class="btn ghost" id="itemShareBtn">Share this item</button></div>
+      <div class="actions"><button type="button" class="btn ghost" id="itemShareBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="10.51" x2="15.42" y2="6.49"/><line x1="8.59" y1="13.49" x2="15.42" y2="17.51"/></svg><span>Share this item</span></button></div>
       <p class="hint" id="itemShareHint">${it.shareToken ? `Shared — <button type="button" class="link plain" id="itemShareOffBtn">stop sharing</button>` : ""}</p>
       </div>` : ""}
     ${!isNew && !convert ? `<div class="more">
@@ -1283,13 +1283,13 @@ function openForm(item, convertTo) {
   const wb = $("#wishBtn"); if (wb) wb.addEventListener("click", () => openForm(state.items.find(i => i.id === it.id), "wish"));
   if (canItemShare) {
     $("#itemShareBtn").addEventListener("click", async () => {
-      const btn = $("#itemShareBtn"), hint = $("#itemShareHint");
-      btn.disabled = true; const original = btn.textContent; btn.textContent = "Sharing…";
+      const btn = $("#itemShareBtn"), label = btn.querySelector("span"), hint = $("#itemShareHint");
+      btn.disabled = true; const original = label.textContent; label.textContent = "Sharing…";
       try {
         await createItemShare(it);
         await openShareSheet(shareUrl(it.shareToken), it.name || "Item");
         openForm(state.items.find(i => i.id === it.id));
-      } catch (e) { hint.textContent = "Couldn’t share: " + authErrorMsg(e); btn.disabled = false; btn.textContent = original; }
+      } catch (e) { hint.textContent = "Couldn’t share: " + authErrorMsg(e); btn.disabled = false; label.textContent = original; }
     });
     if (it.shareToken) {
       const itemShareOff = $("#itemShareOffBtn");
