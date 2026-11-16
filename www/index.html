@@ -529,7 +529,14 @@ async function fetchPage(url) {
 async function fetchImage(src) {
   const H = nativeHttp();
   if (H) {
-    const r = await H.get({ url: src, responseType: "blob", connectTimeout: 15000, readTimeout: 20000,
+    /* Pass query params (Firebase Storage download URLs carry alt=media&token=... here) via `params`
+       rather than leaving them embedded in `url` -- CapacitorHttp re-encodes query strings on native
+       by default, and re-encoding an already-encoded token risks corrupting it, which would make
+       every single download fail identically (no CORS/auth involved: Storage's download token grants
+       access regardless of auth state, confirmed directly against the real bucket). */
+    const u = new URL(src);
+    const params = {}; u.searchParams.forEach((v, k) => { params[k] = v; });
+    const r = await H.get({ url: u.origin + u.pathname, params, responseType: "blob", connectTimeout: 15000, readTimeout: 20000,
       headers: { "User-Agent": UA, "Accept": "image/avif,image/webp,image/*,*/*;q=0.8" } });
     if (r.status >= 400 || !r.data) throw new Error("image");
     const h = r.headers || {};
@@ -1199,7 +1206,12 @@ function openSettings() {
     <h3>Photo recognition</h3>
     <p class="hint">To auto-fill details from a photo (Take a Picture), paste in a free Gemini API key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Without one, photos are still added, just not recognised.</p>
     <div class="field"><label for="s-gemini">Gemini API key</label>
-      <input id="s-gemini" type="password" value="${esc(settings.geminiKey)}" placeholder="Paste your API key" autocomplete="off"></div>
+      <div class="url-row">
+        <input id="s-gemini" type="password" value="${esc(settings.geminiKey)}" placeholder="Paste your API key" autocomplete="off">
+        <button type="button" class="btn primary" id="geminiSaveBtn">Save</button>
+      </div>
+      <p class="hint" id="geminiHint"></p>
+    </div>
     <h3>Backup</h3>
     <p class="hint">Your collection already syncs to the cloud, but export a local copy now and then too.</p>
     <div class="actions">
@@ -1233,7 +1245,15 @@ function openSettings() {
   }
   if (cloudUser) {
     $("#s-cur").addEventListener("input", e => { settings.currency = e.target.value; saveSettings(); render(); cloudPushSettings(); });
-    $("#s-gemini").addEventListener("input", e => { settings.geminiKey = e.target.value.trim(); saveSettings(); });
+    $("#s-gemini").addEventListener("input", e => { settings.geminiKey = e.target.value.trim(); });
+    $("#s-gemini").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#geminiSaveBtn").click(); } });
+    $("#geminiSaveBtn").addEventListener("click", async () => {
+      settings.geminiKey = $("#s-gemini").value.trim(); saveSettings();
+      const hint = $("#geminiHint");
+      if (cloudUser) { hint.textContent = "Saving…"; await cloudPushSettings(); hint.textContent = "Saved."; }
+      else hint.textContent = "Saved.";
+      toast("API key saved");
+    });
     $("#expBtn").addEventListener("click", exportBackup);
     $("#impIn").addEventListener("change", importBackup);
     const wipe = $("#wipeBtn");
