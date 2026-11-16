@@ -61,6 +61,14 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .lbtn{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;flex:none;color:var(--muted)}
 .lbtn svg{width:18px;height:18px}
 .lbtn[aria-pressed="true"]{background:var(--brass);border-color:var(--brass);color:var(--brass-ink)}
+.select-bar{display:flex;align-items:center;gap:10px;padding:6px 16px 10px;max-width:1100px;margin:0 auto;flex-wrap:wrap}
+.select-bar .select-count{color:var(--muted);font-size:14px;flex:1}
+.select-bar .select-actions{display:flex;gap:8px}
+.sel-dot{position:absolute;top:8px;left:8px;width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:rgba(15,23,42,.35);box-shadow:0 1px 3px rgba(15,23,42,.3);z-index:1}
+.card.selected .sel-dot{background:var(--brass);border-color:var(--brass)}
+.card.selected .sel-dot::after{content:"";position:absolute;left:7px;top:3px;width:6px;height:11px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.card.selecting{cursor:pointer}
+.card.selecting .got{display:none}
 .chips{display:flex;gap:8px;overflow-x:auto;padding:8px 16px 4px;scrollbar-width:none;max-width:1100px;margin:0 auto}
 .chips::-webkit-scrollbar{display:none}
 .chip{flex:none;height:34px;padding:0 14px;border-radius:17px;border:1px solid var(--line);background:transparent;cursor:pointer;font-size:14px;white-space:nowrap}
@@ -246,6 +254,16 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
     <svg viewBox="0 0 24 24" fill="currentColor"><rect x="2.5" y="5" width="5.3" height="14" rx="1.2"/><rect x="9.3" y="5" width="5.3" height="14" rx="1.2"/><rect x="16.2" y="5" width="5.3" height="14" rx="1.2"/></svg></button>
   <button class="lbtn" type="button" data-layout="list" aria-label="List view" aria-pressed="false">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="6" height="6" rx="1"/><line x1="11" y1="8" x2="21" y2="8"/><rect x="3" y="14" width="6" height="6" rx="1"/><line x1="11" y1="17" x2="21" y2="17"/></svg></button>
+  <button class="lbtn" type="button" id="shareSelectBtn" aria-label="Share wishlist items" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v14"/></svg></button>
+</div>
+<div class="select-bar" id="selectBar" hidden>
+  <button type="button" class="btn ghost" id="selectAllBtn">Select all</button>
+  <span class="select-count" id="selectCount">0 selected</span>
+  <div class="select-actions">
+    <button type="button" class="btn ghost" id="selectCancelBtn">Cancel</button>
+    <button type="button" class="btn primary" id="selectShareBtn">Share</button>
+  </div>
 </div>
 <div class="chips" id="chips" role="toolbar" aria-label="Filter by category"></div>
 
@@ -323,7 +341,7 @@ const LAYOUTS = ["grid1", "grid2", "grid3", "list"];
 if (!LAYOUTS.includes(settings.layout)) settings.layout = "grid2";
 
 /* ---------- State ---------- */
-const state = { tab: "owned", q: "", cat: "All", sort: "recent", group: "none", layout: settings.layout, items: [] };
+const state = { tab: "owned", q: "", cat: "All", sort: "recent", group: "none", layout: settings.layout, items: [], selecting: false, selected: new Set() };
 const PRI = { 3: "High", 2: "Medium", 1: "Low" };
 const CONDITIONS = ["", "Sealed / new in box", "Mint", "Near mint", "Excellent", "Good", "Fair", "Poor"];
 const price = i => i.list === "owned" ? (+i.value || 0) * (+i.qty || 1) : (+i.target || 0);
@@ -346,6 +364,8 @@ function visible() {
 /* ---------- Rendering ---------- */
 function card(i) {
   const wish = i.list === "wish";
+  const selecting = wish && state.selecting;
+  const selected = selecting && state.selected.has(i.id);
   const first = (String(i.name || "?").trim()[0] || "?").toUpperCase();
   const ph = i.photo ? `<img src="${i.photo}" alt="" loading="lazy">` : `<span class="initial">${esc(first)}</span>`;
   const meta = [i.brand, i.series, i.category, i.scale].filter(Boolean).map(esc).join(", ");
@@ -353,8 +373,8 @@ function card(i) {
   const foot = wish
     ? `<span class="pri p${p}">${PRI[p]}</span><span class="val">${i.target ? money(i.target) : ""}</span>`
     : `<span>${esc(i.condition || "")}</span><span class="val">${i.value ? money(price(i)) : ""}</span>`;
-  return `<div class="card${wish ? " wish" : ""}" role="button" tabindex="0" data-id="${esc(i.id)}" aria-label="${esc(i.name)}">
-    <div class="ph">${ph}${!wish && +i.qty > 1 ? `<span class="qty">×${+i.qty}</span>` : ""}</div>
+  return `<div class="card${wish ? " wish" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}" role="button" tabindex="0" data-id="${esc(i.id)}" aria-label="${esc(i.name)}" aria-pressed="${selecting ? String(selected) : "false"}">
+    <div class="ph">${selecting ? `<span class="sel-dot" aria-hidden="true"></span>` : ""}${ph}${!wish && +i.qty > 1 ? `<span class="qty">×${+i.qty}</span>` : ""}</div>
     <div class="cb">
       <div class="nm">${esc(i.name)}</div>
       ${meta ? `<div class="mt">${meta}</div>` : ""}
@@ -392,6 +412,12 @@ function render() {
   $("#grid").className = "grid " + (state.layout === "list" ? "view-list" : state.layout.replace("grid", "cols-"));
   document.querySelectorAll("#layoutBar [data-layout]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.layout === state.layout)));
 
+  if (state.selecting) for (const id of [...state.selected]) if (!tabItems.some(i => i.id === id)) state.selected.delete(id);
+  const canBulkShare = !owned && cloudEnabled && !!cloudUser;
+  $("#shareSelectBtn").hidden = !canBulkShare;
+  $("#layoutBar").hidden = state.selecting;
+  $("#selectBar").hidden = !state.selecting;
+
   const total = tabItems.reduce((s, i) => s + price(i), 0);
   const pieces = tabItems.reduce((s, i) => s + (+i.qty || 1), 0);
   $("#stats").textContent = !tabItems.length ? "" : owned
@@ -428,6 +454,14 @@ function render() {
     $("#grid").innerHTML = groupedHtml(list, state.group);
   } else {
     $("#grid").innerHTML = list.map(card).join("");
+  }
+
+  if (state.selecting) {
+    const visIds = list.map(i => i.id);
+    const allVisSelected = visIds.length > 0 && visIds.every(id => state.selected.has(id));
+    $("#selectAllBtn").textContent = allVisSelected ? "Deselect all" : "Select all";
+    $("#selectCount").textContent = `${state.selected.size} selected`;
+    $("#selectShareBtn").disabled = state.selected.size === 0;
   }
 
   $("#cOwned").textContent = state.items.filter(i => i.list === "owned").length;
@@ -988,18 +1022,10 @@ function openForm(item, convertTo) {
       <button class="btn primary" id="saveBtn">${convertTo === "owned" ? "Add to collection" : convertTo === "wish" ? "Move to wishlist" : "Save"}</button>
       <button class="btn ghost" id="cancelBtn">Cancel</button>
     </div>
-    ${canItemShare ? `<div class="field" id="itemShareBox"><label>Share this item</label>
-      ${it.shareToken ? `
-      <div class="url-row">
-        <input id="f-share" readonly data-no-clear value="${esc(shareUrl(it.shareToken))}">
-        <button type="button" class="btn ghost" id="itemShareCopyBtn">Copy</button>
-      </div>
-      <div class="actions">
-        <button type="button" class="btn ghost" id="itemShareSendBtn">Share</button>
-        <button type="button" class="btn danger" id="itemShareOffBtn">Turn off</button>
-      </div>` : `
-      <div class="actions"><button type="button" class="btn ghost" id="itemShareOnBtn">Create link for this item</button></div>`}
-      <p class="hint" id="itemShareHint"></p></div>` : ""}
+    ${canItemShare ? `<div class="field" id="itemShareBox">
+      <div class="actions"><button type="button" class="btn ghost" id="itemShareBtn">Share this item</button></div>
+      <p class="hint" id="itemShareHint">${it.shareToken ? `Shared — <button type="button" class="link plain" id="itemShareOffBtn">stop sharing</button>` : ""}</p>
+      </div>` : ""}
     ${!isNew && !convert ? `<div class="more">
       ${!owned ? `<button class="btn ghost" id="moveBtn">Move to collection</button>` : `<button class="btn ghost" id="wishBtn">Move to wishlist</button>`}
       <button class="btn danger" id="delBtn">Delete</button></div>` : ""}`;
@@ -1064,29 +1090,20 @@ function openForm(item, convertTo) {
   const mv = $("#moveBtn"); if (mv) mv.addEventListener("click", () => openForm(state.items.find(i => i.id === it.id), "owned"));
   const wb = $("#wishBtn"); if (wb) wb.addEventListener("click", () => openForm(state.items.find(i => i.id === it.id), "wish"));
   if (canItemShare) {
+    $("#itemShareBtn").addEventListener("click", async () => {
+      const btn = $("#itemShareBtn"), hint = $("#itemShareHint");
+      btn.disabled = true; const original = btn.textContent; btn.textContent = "Sharing…";
+      try {
+        await createItemShare(it);
+        await openShareSheet(shareUrl(it.shareToken), it.name || "Wishlist item");
+        openForm(state.items.find(i => i.id === it.id));
+      } catch (e) { hint.textContent = "Couldn’t share: " + authErrorMsg(e); btn.disabled = false; btn.textContent = original; }
+    });
     if (it.shareToken) {
-      $("#itemShareCopyBtn").addEventListener("click", async () => {
-        try { await navigator.clipboard.writeText(shareUrl(it.shareToken)); toast("Link copied"); }
-        catch (e) { const f = $("#f-share"); f.focus(); f.select(); }
-      });
-      $("#itemShareSendBtn").addEventListener("click", async () => {
-        const url = shareUrl(it.shareToken);
-        const P = window.Capacitor && window.Capacitor.Plugins;
-        if (P && P.Share) { try { await P.Share.share({ title: it.name || "Wishlist item", url }); return; } catch (e) { if (/cancel/i.test(String(e && e.message))) return; } }
-        try { if (navigator.share) { await navigator.share({ title: it.name || "Wishlist item", url }); return; } } catch (e) { if (e && e.name === "AbortError") return; }
-        try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch (e) {}
-      });
       const itemShareOff = $("#itemShareOffBtn");
-      itemShareOff.addEventListener("click", () => armThen(itemShareOff, "Tap again to turn off", async () => {
+      if (itemShareOff) itemShareOff.addEventListener("click", async () => {
         await revokeItemShare(it); toast("Sharing turned off for this item");
         openForm(state.items.find(i => i.id === it.id));
-      }));
-    } else {
-      $("#itemShareOnBtn").addEventListener("click", async () => {
-        const btn = $("#itemShareOnBtn"), hint = $("#itemShareHint");
-        btn.disabled = true; hint.textContent = "Creating link…";
-        try { await createItemShare(it); toast("Share link created"); openForm(state.items.find(i => i.id === it.id)); }
-        catch (e) { hint.textContent = "Couldn’t create link: " + authErrorMsg(e); btn.disabled = false; }
       });
     }
   }
@@ -1294,6 +1311,15 @@ async function cloudPullAll(silent) {
 const SHARE_BASE_URL = "https://iitzbez.github.io/miCollects/share.html";
 const shareUrl = token => `${SHARE_BASE_URL}?id=${token}`;
 
+/* Opens the OS share sheet (native on Android via the Share plugin, the Web Share API in a browser),
+   falling back to copying the link to the clipboard if neither is available. */
+async function openShareSheet(url, title) {
+  const P = window.Capacitor && window.Capacitor.Plugins;
+  if (P && P.Share) { try { await P.Share.share({ title, url }); return; } catch (e) { if (/cancel/i.test(String(e && e.message))) return; } }
+  try { if (navigator.share) { await navigator.share({ title, url }); return; } } catch (e) { if (e && e.name === "AbortError") return; }
+  try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch (e) {}
+}
+
 async function ensureItemPhotoSynced(it) {
   if ((it.cloudPhotos || []).length < (it.photos || []).length) {
     try { await cloudPushItem(it); } catch (e) {}
@@ -1372,6 +1398,17 @@ async function revokeItemShare(it) {
   cloudPushItem(it).catch(() => {});
 }
 
+/* ---------- Pick-and-share: a one-off snapshot of just the selected items, shared immediately.
+   No "manage this link" UI -- a fresh token each time, same as sharing a photo. */
+async function shareItemsNow(items) {
+  for (const it of items) await ensureItemPhotoSynced(it);
+  const sorted = items.slice().sort((a, b) => (b.priority || 2) - (a.priority || 2) || (a.name || "").localeCompare(b.name || ""));
+  const token = uid();
+  await pushShareDoc(token, sorted.map(shareEntry));
+  const title = items.length === 1 ? (items[0].name || "Wishlist item") : `My miCollects wishlist (${items.length} items)`;
+  await openShareSheet(shareUrl(token), title);
+}
+
 function refreshSettingsIfOpen() {
   if (sheetOpen && $("#sheetTitle") && $("#sheetTitle").textContent === "Settings") openSettings();
 }
@@ -1432,22 +1469,9 @@ function openSettings() {
       <p class="hint" id="geminiHint"></p>
     </div>
     <h3>Share wishlist</h3>
-    <p class="hint">Create a link anyone can open in a browser — no account or app install needed — to see your wishlist with target prices and priority, so they know what to get you.</p>
-    ${settings.wishlistShareToken ? `
-    <div class="field"><label for="s-share">Your share link</label>
-      <div class="url-row">
-        <input id="s-share" readonly data-no-clear value="${esc(shareUrl(settings.wishlistShareToken))}">
-        <button type="button" class="btn ghost" id="shareCopyBtn">Copy</button>
-      </div>
-    </div>
-    <div class="actions">
-      <button class="btn primary" id="shareSendBtn">Share</button>
-      <button class="btn ghost" id="shareUpdateBtn">Update now</button>
-    </div>
-    <div class="more"><button class="btn danger" id="shareOffBtn">Turn off sharing</button></div>
-    <p class="hint" id="shareHint"></p>` : `
-    <div class="actions"><button class="btn primary" id="shareOnBtn">Create share link</button></div>
-    <p class="hint" id="shareHint"></p>`}
+    <p class="hint">Send a link anyone can open in a browser — no account or app install needed — to see your wishlist with target prices and priority, so they know what to get you.</p>
+    <div class="actions"><button class="btn primary" id="shareBtn">Share wishlist</button></div>
+    <p class="hint" id="shareHint">${settings.wishlistShareToken ? `Shared — <button type="button" class="link plain" id="shareOffBtn">stop sharing</button>` : ""}</p>
     <h3>Backup</h3>
     <p class="hint">Your collection already syncs to the cloud, but export a local copy now and then too.</p>
     <div class="actions">
@@ -1490,33 +1514,19 @@ function openSettings() {
       else hint.textContent = "Saved.";
       toast("API key saved");
     });
+    $("#shareBtn").addEventListener("click", async () => {
+      const btn = $("#shareBtn"), hint = $("#shareHint");
+      btn.disabled = true; const original = btn.textContent; btn.textContent = "Sharing…";
+      try {
+        await createShare();
+        await openShareSheet(shareUrl(settings.wishlistShareToken), "My miCollects wishlist");
+        openSettings();
+      } catch (e) { hint.textContent = "Couldn’t share: " + authErrorMsg(e); btn.disabled = false; btn.textContent = original; }
+    });
     if (settings.wishlistShareToken) {
-      $("#shareCopyBtn").addEventListener("click", async () => {
-        try { await navigator.clipboard.writeText(shareUrl(settings.wishlistShareToken)); toast("Link copied"); }
-        catch (e) { const f = $("#s-share"); f.focus(); f.select(); }
-      });
-      $("#shareSendBtn").addEventListener("click", async () => {
-        const url = shareUrl(settings.wishlistShareToken);
-        const P = window.Capacitor && window.Capacitor.Plugins;
-        if (P && P.Share) { try { await P.Share.share({ title: "My miCollects wishlist", url }); return; } catch (e) { if (/cancel/i.test(String(e && e.message))) return; } }
-        try { if (navigator.share) { await navigator.share({ title: "My miCollects wishlist", url }); return; } } catch (e) { if (e && e.name === "AbortError") return; }
-        try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch (e) {}
-      });
-      $("#shareUpdateBtn").addEventListener("click", async () => {
-        const hint = $("#shareHint"); hint.textContent = "Updating…";
-        try { await pushShareSnapshot(settings.wishlistShareToken); hint.textContent = "Updated just now."; toast("Share link updated"); }
-        catch (e) { hint.textContent = "Couldn’t update: " + authErrorMsg(e); }
-      });
       const shareOff = $("#shareOffBtn");
-      shareOff.addEventListener("click", () => armThen(shareOff, "Tap again to turn off", async () => {
+      if (shareOff) shareOff.addEventListener("click", async () => {
         await revokeShare(); toast("Sharing turned off"); openSettings();
-      }));
-    } else {
-      $("#shareOnBtn").addEventListener("click", async () => {
-        const btn = $("#shareOnBtn"), hint = $("#shareHint");
-        btn.disabled = true; hint.textContent = "Creating your link…";
-        try { await createShare(); toast("Share link created"); openSettings(); }
-        catch (e) { hint.textContent = "Couldn’t create link: " + authErrorMsg(e); btn.disabled = false; }
       });
     }
     $("#expBtn").addEventListener("click", exportBackup);
@@ -1585,9 +1595,16 @@ async function importBackup(e) {
 $("#grid").addEventListener("click", e => {
   if (e.target.closest("[data-add]")) { openForm(null); return; }
   const got = e.target.closest("[data-got]");
-  if (got) { e.stopPropagation(); openForm(state.items.find(i => i.id === got.dataset.got), "owned"); return; }
+  if (got && !state.selecting) { e.stopPropagation(); openForm(state.items.find(i => i.id === got.dataset.got), "owned"); return; }
   const c = e.target.closest(".card");
-  if (c) openForm(state.items.find(i => i.id === c.dataset.id));
+  if (!c) return;
+  if (state.selecting && c.classList.contains("wish")) {
+    const id = c.dataset.id;
+    if (state.selected.has(id)) state.selected.delete(id); else state.selected.add(id);
+    render();
+    return;
+  }
+  if (!state.selecting) openForm(state.items.find(i => i.id === c.dataset.id));
 });
 $("#grid").addEventListener("keydown", e => {
   if ((e.key === "Enter" || e.key === " ") && e.target.classList.contains("card")) { e.preventDefault(); e.target.click(); }
@@ -1597,12 +1614,29 @@ $("#q").addEventListener("input", e => { state.q = e.target.value; render(); });
 $("#sort").addEventListener("change", e => { state.sort = e.target.value; render(); });
 $("#group").addEventListener("change", e => { state.group = e.target.value; render(); });
 $("#layoutBar").addEventListener("click", e => {
-  const b = e.target.closest("[data-layout]"); if (!b) return;
-  state.layout = settings.layout = b.dataset.layout; saveSettings(); render(); cloudPushSettings();
+  const b = e.target.closest("[data-layout]");
+  if (b) { state.layout = settings.layout = b.dataset.layout; saveSettings(); render(); cloudPushSettings(); return; }
+  if (e.target.closest("#shareSelectBtn")) { state.selecting = true; state.selected = new Set(); render(); }
+});
+$("#selectAllBtn").addEventListener("click", () => {
+  const visIds = visible().filter(i => i.list === "wish").map(i => i.id);
+  const allSelected = visIds.length > 0 && visIds.every(id => state.selected.has(id));
+  state.selected = allSelected ? new Set() : new Set(visIds);
+  render();
+});
+$("#selectCancelBtn").addEventListener("click", () => { state.selecting = false; state.selected = new Set(); render(); });
+$("#selectShareBtn").addEventListener("click", async () => {
+  if (!state.selected.size) { toast("Select at least one item"); return; }
+  const btn = $("#selectShareBtn"); btn.disabled = true; const original = btn.textContent; btn.textContent = "Sharing…";
+  try {
+    const items = state.items.filter(i => state.selected.has(i.id));
+    await shareItemsNow(items);
+    state.selecting = false; state.selected = new Set(); render();
+  } catch (e) { toast("Couldn’t share: " + authErrorMsg(e)); btn.disabled = false; btn.textContent = original; }
 });
 document.querySelectorAll(".nav button").forEach(b => b.addEventListener("click", () => {
   if (state.tab === b.dataset.tab) return;
-  state.tab = b.dataset.tab; state.cat = "All"; render(); scrollTo({ top: 0 });
+  state.tab = b.dataset.tab; state.cat = "All"; state.selecting = false; state.selected = new Set(); render(); scrollTo({ top: 0 });
 }));
 $("#addBtn").addEventListener("click", () => openForm(null));
 $("#settingsBtn").addEventListener("click", openSettings);
