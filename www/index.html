@@ -1350,8 +1350,16 @@ function finishWelcome() { settings.onboarded = true; saveSettings(); $("#welcom
 $("#wLocal").addEventListener("click", finishWelcome);
 $("#wSignIn").addEventListener("click", () => openWelcomeForm("signin"));
 $("#wSignUp").addEventListener("click", () => openWelcomeForm("signup"));
-$("#wfBack").addEventListener("click", () => { $("#welcomeForm").hidden = true; $("#welcomeChoices").hidden = false; });
+$("#wfBack").addEventListener("click", () => {
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  $("#welcomeForm").hidden = true; $("#welcomeChoices").hidden = false;
+});
 function openWelcomeForm(mode) {
+  /* Blur whatever's focused (the Sign in/Create account button just tapped) before hiding it --
+     hiding a still-focused element can leave the WebView's keyboard/focus state confused, so the
+     next tap on the email field only clears that stale state instead of opening the keyboard,
+     and a second tap is what actually focuses it. */
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   $("#welcomeChoices").hidden = true;
   $("#welcomeForm").hidden = false;
   $("#wfHint").textContent = "";
