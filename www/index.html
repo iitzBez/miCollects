@@ -149,6 +149,7 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .thumb .x{position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;border:0;background:rgba(15,23,42,.72);color:#fff;font-size:14px;line-height:22px;padding:0;cursor:pointer}
 .thumb.add{display:grid;place-items:center;border:2px dashed var(--line);color:var(--muted);font-size:26px;cursor:pointer}
 .link{border:0;background:none;color:var(--danger);padding:4px 0 10px;cursor:pointer;font-size:14px;font-weight:600}
+.link.plain{color:var(--brass)}
 .actions{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap}
 .btn{min-height:48px;padding:0 20px;border-radius:12px;font-weight:650;cursor:pointer;border:1px solid transparent;display:inline-flex;align-items:center;justify-content:center;gap:8px}
 .btn.primary{background:var(--brass);color:var(--brass-ink);flex:1}
@@ -166,6 +167,10 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 [hidden]{display:none!important}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 </style>
+<script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-storage-compat.js"></script>
 </head>
 <body>
 
@@ -903,6 +908,7 @@ function openForm(item, convert) {
     await store.del(it.id);
     state.items = state.items.filter(i => i.id !== it.id);
     closeSheet(); render(); toast("Deleted");
+    cloudDeleteItem(it.id);
   }));
   showSheet();
 }
@@ -927,6 +933,7 @@ async function save() {
   if (convert || isNew) state.tab = it.list;
   closeSheet(); render();
   toast(convert ? "Added to your collection" : isNew ? "Saved" : "Changes saved");
+  cloudPushItem(it).catch(() => toast("Saved here, but couldn’t sync to the cloud."));
 }
 
 function armThen(btn, armedLabel, action) {
@@ -936,10 +943,143 @@ function armThen(btn, armedLabel, action) {
   setTimeout(() => { btn.classList.remove("armed"); btn.textContent = original; }, 3500);
 }
 
+/* ---------- Cloud sync (Firebase, optional) ---------- */
+/* Paste your Firebase project's web app config here (Firebase console > Project settings > General >
+   Your apps > SDK setup and configuration). This object isn't secret -- Firebase web config is meant to
+   be public; access is controlled by the Firestore/Storage security rules set in the console, not by
+   hiding this. Leave the placeholder as-is to ship the app with cloud sync simply turned off. */
+const firebaseConfig = {
+  apiKey: "PASTE_ME",
+  authDomain: "PASTE_ME",
+  projectId: "PASTE_ME",
+  storageBucket: "PASTE_ME",
+  messagingSenderId: "PASTE_ME",
+  appId: "PASTE_ME"
+};
+const cloudEnabled = firebaseConfig.apiKey !== "PASTE_ME";
+let cloudUser = null, appReady = false;
+let fbAuth = null, fbDb = null, fbStorage = null;
+if (cloudEnabled) {
+  firebase.initializeApp(firebaseConfig);
+  fbAuth = firebase.auth(); fbDb = firebase.firestore(); fbStorage = firebase.storage();
+}
+
+const AUTH_ERRORS = {
+  "auth/invalid-email": "That doesn’t look like a valid email address.",
+  "auth/user-not-found": "No account with that email. Tap Create account instead?",
+  "auth/wrong-password": "Wrong password.",
+  "auth/invalid-credential": "Wrong email or password.",
+  "auth/email-already-in-use": "There’s already an account with that email. Tap Sign in instead?",
+  "auth/weak-password": "Use at least 6 characters.",
+  "auth/too-many-requests": "Too many attempts. Wait a bit, then try again.",
+  "auth/network-request-failed": "Couldn’t reach the server. Check your connection."
+};
+const authErrorMsg = e => AUTH_ERRORS[e && e.code] || (e && e.message) || "Something went wrong.";
+
+function cloudSignUp(email, password) { return fbAuth.createUserWithEmailAndPassword(email, password); }
+function cloudSignIn(email, password) { return fbAuth.signInWithEmailAndPassword(email, password); }
+function cloudSignOut() { return fbAuth.signOut(); }
+function cloudResetPassword(email) { return fbAuth.sendPasswordResetEmail(email); }
+
+async function uploadPhoto(itemId, index, dataUrl) {
+  const blob = await (await fetch(dataUrl)).blob();
+  const ref = fbStorage.ref(`users/${cloudUser.uid}/items/${itemId}/${index}.jpg`);
+  await ref.put(blob, { contentType: "image/jpeg" });
+  return ref.getDownloadURL();
+}
+
+/* Uploads any photos not already cached from a previous push (cloudPhotos), then writes the item --
+   Firestore keeps the photos as Storage URLs, never the raw base64, to stay well under its 1MB/doc limit. */
+async function cloudPushItem(it) {
+  if (!cloudEnabled || !cloudUser) return;
+  const photos = it.photos || [], cached = it.cloudPhotos || [];
+  const urls = [];
+  for (let i = 0; i < photos.length; i++) urls.push(cached[i] || await uploadPhoto(it.id, i, photos[i]));
+  it.cloudPhotos = urls;
+  try { await store.put(it); } catch (e) {}
+  const { photos: _p, photo: _ph, cloudPhotos: _cp, ...rest } = it;
+  const doc = JSON.parse(JSON.stringify({ ...rest, photos: urls, photo: urls[0] || null }));
+  await fbDb.collection("users").doc(cloudUser.uid).collection("items").doc(it.id).set(doc);
+}
+
+async function cloudDeleteItem(id) {
+  if (!cloudEnabled || !cloudUser) return;
+  try { await fbDb.collection("users").doc(cloudUser.uid).collection("items").doc(id).delete(); } catch (e) {}
+}
+
+async function cloudPushSettings() {
+  if (!cloudEnabled || !cloudUser) return;
+  const { geminiKey, ...rest } = settings; // the Gemini key stays device-local, never synced
+  try { await fbDb.collection("users").doc(cloudUser.uid).collection("meta").doc("settings").set(rest); } catch (e) {}
+}
+
+/* Pulls every remote item newer than the local copy, downloads its photos, and pushes up any local
+   item the cloud doesn't have yet (covers signing in for the first time with existing local items). */
+async function cloudPullAll(silent) {
+  if (!cloudEnabled || !cloudUser) return;
+  if (!silent) toast("Syncing…");
+  try {
+    const snap = await fbDb.collection("users").doc(cloudUser.uid).collection("items").get();
+    let pulled = 0;
+    for (const doc of snap.docs) {
+      const remote = doc.data();
+      const existing = state.items.find(i => i.id === doc.id);
+      if (existing && (existing.updated || 0) >= (remote.updated || 0)) continue;
+      const urls = Array.isArray(remote.photos) ? remote.photos : [];
+      const photos = [];
+      for (const url of urls) { try { photos.push(await fetchImage(url)); } catch (e) {} }
+      await store.put({ ...remote, id: doc.id, photos, photo: photos[0] || null, cloudPhotos: urls });
+      pulled++;
+    }
+    const remoteIds = new Set(snap.docs.map(d => d.id));
+    for (const it of state.items) if (!remoteIds.has(it.id)) await cloudPushItem(it);
+    const metaDoc = await fbDb.collection("users").doc(cloudUser.uid).collection("meta").doc("settings").get();
+    if (metaDoc.exists) { Object.assign(settings, metaDoc.data()); saveSettings(); } else { await cloudPushSettings(); }
+    state.items = await store.all();
+    render();
+    if (!silent) toast(pulled ? `Synced — updated ${pulled} ${pulled === 1 ? "item" : "items"}` : "Synced — everything’s up to date");
+  } catch (e) {
+    if (!silent) toast("Couldn’t sync: " + authErrorMsg(e));
+  }
+}
+
+function refreshSettingsIfOpen() {
+  if (sheetOpen && $("#sheetTitle") && $("#sheetTitle").textContent === "Settings") openSettings();
+}
+
+if (cloudEnabled) {
+  fbAuth.onAuthStateChanged(user => {
+    cloudUser = user;
+    if (appReady && user) cloudPullAll(true);
+    refreshSettingsIfOpen();
+  });
+}
+
 /* ---------- Settings + backup ---------- */
 function openSettings() {
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">Settings</h2>
+    <h3>Account &amp; sync</h3>
+    ${!cloudEnabled ? `<p class="hint">Cloud sync isn’t set up for this build yet.</p>` : cloudUser ? `
+    <p class="hint">Signed in as ${esc(cloudUser.email)}. Your collection and settings sync to the cloud automatically when you save; photos go too.</p>
+    <div class="actions">
+      <button class="btn ghost" id="syncBtn">Sync now</button>
+      <button class="btn ghost" id="signOutBtn">Sign out</button>
+    </div>
+    <p class="hint" id="authHint"></p>` : `
+    <p class="hint">Sign in to back up your collection to the cloud, sync it to another device, and manage currency, backup and photo-recognition settings.</p>
+    <div class="field"><label for="s-email">Email</label>
+      <input id="s-email" type="email" autocomplete="email" placeholder="you@example.com"></div>
+    <div class="field"><label for="s-pass">Password</label>
+      <input id="s-pass" type="password" autocomplete="current-password" placeholder="At least 6 characters"></div>
+    <div class="actions">
+      <button class="btn primary" id="signInBtn">Sign in</button>
+      <button class="btn ghost" id="signUpBtn">Create account</button>
+    </div>
+    <button type="button" class="link plain" id="forgotBtn">Forgot password?</button>
+    <p class="hint" id="authHint"></p>`}
+    ${cloudUser ? `
+    <h3>Currency</h3>
     <div class="field"><label for="s-cur">Currency symbol</label>
       <input id="s-cur" value="${esc(settings.currency)}" maxlength="4" autocomplete="off"></div>
     <h3>Photo recognition</h3>
@@ -947,24 +1087,48 @@ function openSettings() {
     <div class="field"><label for="s-gemini">Gemini API key</label>
       <input id="s-gemini" type="password" value="${esc(settings.geminiKey)}" placeholder="Paste your API key" autocomplete="off"></div>
     <h3>Backup</h3>
-    <p class="hint">Your items are stored only on this phone. Export a backup now and then, and before you uninstall or switch phones.</p>
+    <p class="hint">Your collection already syncs to the cloud, but export a local copy now and then too.</p>
     <div class="actions">
       <button class="btn ghost" id="expBtn">Export backup</button>
       <label class="btn ghost" for="impIn">Import backup</label>
       <input type="file" id="impIn" accept="application/json,.json,text/plain,.txt" hidden>
     </div>
     <div id="backupOut"></div>
-    <div class="more"><button class="btn danger" id="wipeBtn">Delete everything</button></div>
+    <div class="more"><button class="btn danger" id="wipeBtn">Delete everything</button></div>` : ""}
     <div class="actions"><button class="btn primary" id="sDone">Done</button></div>`;
-  $("#s-cur").addEventListener("input", e => { settings.currency = e.target.value; saveSettings(); render(); });
-  $("#s-gemini").addEventListener("input", e => { settings.geminiKey = e.target.value.trim(); saveSettings(); });
-  $("#expBtn").addEventListener("click", exportBackup);
-  $("#impIn").addEventListener("change", importBackup);
+  if (cloudEnabled && cloudUser) {
+    $("#syncBtn").addEventListener("click", () => cloudPullAll());
+    $("#signOutBtn").addEventListener("click", () => cloudSignOut());
+  } else if (cloudEnabled) {
+    const authHint = $("#authHint");
+    const authAction = async (fn, okMsg) => {
+      const email = $("#s-email").value.trim(), pass = $("#s-pass").value;
+      if (!email || !pass) { authHint.textContent = "Enter an email and password."; return; }
+      authHint.textContent = "Working…";
+      try { await fn(email, pass); toast(okMsg); } catch (e) { authHint.textContent = authErrorMsg(e); }
+    };
+    $("#signInBtn").addEventListener("click", () => authAction(cloudSignIn, "Signed in"));
+    $("#signUpBtn").addEventListener("click", () => authAction(cloudSignUp, "Account created"));
+    $("#forgotBtn").addEventListener("click", async () => {
+      const email = $("#s-email").value.trim();
+      if (!email) { authHint.textContent = "Enter your email first."; return; }
+      try { await cloudResetPassword(email); authHint.textContent = "Check your email for a reset link."; }
+      catch (e) { authHint.textContent = authErrorMsg(e); }
+    });
+  }
+  if (cloudUser) {
+    $("#s-cur").addEventListener("input", e => { settings.currency = e.target.value; saveSettings(); render(); cloudPushSettings(); });
+    $("#s-gemini").addEventListener("input", e => { settings.geminiKey = e.target.value.trim(); saveSettings(); });
+    $("#expBtn").addEventListener("click", exportBackup);
+    $("#impIn").addEventListener("change", importBackup);
+    const wipe = $("#wipeBtn");
+    wipe.addEventListener("click", () => armThen(wipe, "Tap again to delete all items", async () => {
+      const ids = state.items.map(i => i.id);
+      await store.clear(); state.items = []; closeSheet(); render(); toast("All items deleted");
+      ids.forEach(cloudDeleteItem);
+    }));
+  }
   $("#sDone").addEventListener("click", closeSheet);
-  const wipe = $("#wipeBtn");
-  wipe.addEventListener("click", () => armThen(wipe, "Tap again to delete all items", async () => {
-    await store.clear(); state.items = []; closeSheet(); render(); toast("All items deleted");
-  }));
   showSheet();
 }
 
@@ -1030,7 +1194,7 @@ $("#sort").addEventListener("change", e => { state.sort = e.target.value; render
 $("#group").addEventListener("change", e => { state.group = e.target.value; render(); });
 $("#layoutBar").addEventListener("click", e => {
   const b = e.target.closest("[data-layout]"); if (!b) return;
-  state.layout = settings.layout = b.dataset.layout; saveSettings(); render();
+  state.layout = settings.layout = b.dataset.layout; saveSettings(); render(); cloudPushSettings();
 });
 document.querySelectorAll(".nav button").forEach(b => b.addEventListener("click", () => {
   if (state.tab === b.dataset.tab) return;
@@ -1045,6 +1209,8 @@ $("#settingsBtn").addEventListener("click", openSettings);
   try { state.items = await store.all(); } catch (e) { state.items = []; }
   render();
   if (!store.db) toast("Storage is unavailable, so items won’t be kept after closing.");
+  appReady = true;
+  if (cloudUser) cloudPullAll(true);
 })();
 </script>
 </body>
