@@ -224,6 +224,7 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
       <input id="wf-pass" name="password" type="password" autocomplete="current-password" placeholder="Password"></div>
     <button type="button" class="btn primary" id="wfSubmit">Sign in</button>
     <p class="hint" id="wfHint"></p>
+    <button type="button" class="link plain" id="wfForgot" hidden>Forgot password?</button>
     <button type="button" class="link plain" id="wfBack">Back</button>
   </div>
 </div>
@@ -1763,13 +1764,23 @@ function openWelcomeForm(mode) {
   $("#wfHint").textContent = "";
   $("#wfTitle").textContent = mode === "signin" ? "Sign in" : "Create account";
   $("#wfSubmit").textContent = mode === "signin" ? "Sign in" : "Create account";
+  $("#wfForgot").hidden = mode !== "signin";
   $("#wfSubmit").onclick = async () => {
     const email = $("#wf-email").value.trim(), pass = $("#wf-pass").value;
     const hint = $("#wfHint");
     if (!email || !pass) { hint.textContent = "Enter an email and password."; return; }
+    if (!isValidEmail(email)) { hint.textContent = "Enter a valid email address."; return; }
     if (mode === "signup") { const err = passwordPolicyError(pass); if (err) { hint.textContent = err; return; } }
     hint.textContent = "Working…";
     try { await (mode === "signin" ? cloudSignIn(email, pass) : cloudSignUp(email, pass)); finishWelcome(); }
+    catch (e) { hint.textContent = authErrorMsg(e); }
+  };
+  $("#wfForgot").onclick = async () => {
+    const email = $("#wf-email").value.trim();
+    const hint = $("#wfHint");
+    if (!email) { hint.textContent = "Enter your email first."; return; }
+    if (!isValidEmail(email)) { hint.textContent = "Enter a valid email address."; return; }
+    try { await cloudResetPassword(email); hint.textContent = "Check your email for a reset link."; }
     catch (e) { hint.textContent = authErrorMsg(e); }
   };
 }
