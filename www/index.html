@@ -1288,6 +1288,13 @@ async function cloudPushSettings() {
 let cloudSyncing = false;
 async function cloudPullAll(silent) {
   if (!cloudEnabled || !cloudUser) return;
+  // Snapshot which account this sync belongs to, up front -- cloudUser/currentScope are mutable
+  // globals that change the instant the user signs out or switches accounts, and this function keeps
+  // running in the background across several awaits. Without this, a sign-out mid-sync makes later
+  // store.put() calls below pick up the now-"local" scope live, writing cloud items into local
+  // storage instead of the account they actually belong to.
+  const syncUid = cloudUser.uid;
+  const stillCurrent = () => cloudUser && cloudUser.uid === syncUid;
   const setHint = msg => { const h = $("#authHint"); if (h) h.textContent = msg; };
   if (cloudSyncing) { toast("Already syncing…"); setHint("Already syncing…"); return; }
   cloudSyncing = true;
@@ -1295,7 +1302,7 @@ async function cloudPullAll(silent) {
   if (!silent) toast("Syncing…");
   setHint("Syncing…");
   try {
-    const snap = await fbDb.collection("users").doc(cloudUser.uid).collection("items").get();
+    const snap = await fbDb.collection("users").doc(syncUid).collection("items").get();
     const toPull = snap.docs.filter(doc => {
       const remote = doc.data();
       const existing = state.items.find(i => i.id === doc.id);
@@ -1321,21 +1328,28 @@ async function cloudPullAll(silent) {
         const photos = keepExisting ? existing.photos : fetched;
         const photo = keepExisting ? existing.photo : (fetched[0] || null);
         const cloudPhotos = keepExisting ? (existing.cloudPhotos || urls) : urls;
-        await store.put({ ...remote, id: doc.id, photos, photo, cloudPhotos, scope: currentScope });
+        await store.put({ ...remote, id: doc.id, photos, photo, cloudPhotos, scope: syncUid });
         if (urls.length > fetched.length) failed++; else pulled++;
       } catch (e) { failed++; lastPhotoError = e; }
     }));
+    // The account that started this sync may no longer be the signed-in one (sign-out, or a switch
+    // to a different account) by the time the pulls above finish -- everything pulled is already
+    // safely stored under its real owner's scope, but nothing past this point should touch the
+    // current screen/state, which now belongs to a different account or to "local".
+    if (!stillCurrent()) return;
     const remoteIds = new Set(snap.docs.map(d => d.id));
     for (const it of state.items) {
       if (remoteIds.has(it.id)) continue;
       try { await cloudPushItem(it); } catch (e) {}
     }
     try {
-      const metaDoc = await fbDb.collection("users").doc(cloudUser.uid).collection("meta").doc("settings").get();
+      const metaDoc = await fbDb.collection("users").doc(syncUid).collection("meta").doc("settings").get();
       if (metaDoc.exists) { Object.assign(settings, metaDoc.data()); saveSettings(); } else { await cloudPushSettings(); }
     } catch (e) {}
-    state.items = await store.all(currentScope);
+    if (!stillCurrent()) return;
+    state.items = await store.all(syncUid);
     render();
+    refreshSettingsIfOpen();
     settings.lastSynced = Date.now(); saveSettings();
     const errDetail = lastPhotoError ? ` [${lastPhotoError.status ? "HTTP " + lastPhotoError.status : lastPhotoError.message || "error"}]` : "";
     const msg = failed ? `Synced, but ${failed} ${failed === 1 ? "item" : "items"} didn’t come through${errDetail} — tap Sync now to retry.`
