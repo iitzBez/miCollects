@@ -291,7 +291,15 @@ const store = {
   async clear() { if (!this.db) { this.mem.clear(); return; } await this.req(this.os("readwrite").clear()); }
 };
 
-const settings = { currency: "R", layout: "grid2", geminiKey: "", onboarded: false };
+const settings = { currency: "R", layout: "grid2", geminiKey: "", onboarded: false, lastSynced: null };
+function timeAgo(ts) {
+  if (!ts) return "";
+  const s = Math.max(1, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.round(s / 60); if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60); if (h < 24) return `${h} hr ago`;
+  const d = Math.round(h / 24); return `${d} day${d === 1 ? "" : "s"} ago`;
+}
 try { Object.assign(settings, JSON.parse(localStorage.getItem("cabinet-settings") || "{}")); } catch (e) {}
 function saveSettings() { try { localStorage.setItem("cabinet-settings", JSON.stringify(settings)); } catch (e) {} }
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
@@ -1048,6 +1056,8 @@ async function cloudPushItem(it) {
   const { photos: _p, photo: _ph, cloudPhotos: _cp, ...rest } = it;
   const doc = JSON.parse(JSON.stringify({ ...rest, photos: urls, photo: urls[0] || null }));
   await fbDb.collection("users").doc(cloudUser.uid).collection("items").doc(it.id).set(doc);
+  settings.lastSynced = Date.now(); saveSettings();
+  const authHint = $("#authHint"); if (authHint) authHint.textContent = "Synced just now.";
 }
 
 async function cloudDeleteItem(id) {
@@ -1057,7 +1067,7 @@ async function cloudDeleteItem(id) {
 
 async function cloudPushSettings() {
   if (!cloudEnabled || !cloudUser) return;
-  const { geminiKey, ...rest } = settings; // the Gemini key stays device-local, never synced
+  const { geminiKey, lastSynced, ...rest } = settings; // these stay device-local, never synced
   try { await fbDb.collection("users").doc(cloudUser.uid).collection("meta").doc("settings").set(rest); } catch (e) {}
 }
 
@@ -1085,9 +1095,14 @@ async function cloudPullAll(silent) {
     if (metaDoc.exists) { Object.assign(settings, metaDoc.data()); saveSettings(); } else { await cloudPushSettings(); }
     state.items = await store.all(currentScope);
     render();
-    if (!silent) toast(pulled ? `Synced — updated ${pulled} ${pulled === 1 ? "item" : "items"}` : "Synced — everything’s up to date");
+    settings.lastSynced = Date.now(); saveSettings();
+    const msg = pulled ? `Synced — updated ${pulled} ${pulled === 1 ? "item" : "items"}` : "Synced — everything’s up to date";
+    if (!silent) toast(msg);
+    const authHint = $("#authHint"); if (authHint) authHint.textContent = `${msg} (just now)`;
   } catch (e) {
-    if (!silent) toast("Couldn’t sync: " + authErrorMsg(e));
+    const msg = "Couldn’t sync: " + authErrorMsg(e);
+    if (!silent) toast(msg);
+    const authHint = $("#authHint"); if (authHint) authHint.textContent = msg;
   }
 }
 
@@ -1125,7 +1140,7 @@ function openSettings() {
       <button class="btn ghost" id="syncBtn">Sync now</button>
       <button class="btn ghost" id="signOutBtn">Sign out</button>
     </div>
-    <p class="hint" id="authHint"></p>` : `
+    <p class="hint" id="authHint">${settings.lastSynced ? `Last synced ${esc(timeAgo(settings.lastSynced))}.` : ""}</p>` : `
     <p class="hint">Sign in to back up your collection to the cloud, sync it to another device, and manage currency, backup and photo-recognition settings.</p>
     <div class="field"><label for="s-email">Email</label>
       <input id="s-email" type="email" autocomplete="email" placeholder="you@example.com"></div>
