@@ -1070,7 +1070,7 @@ async function cloudDeleteItem(id) {
 
 async function cloudPushSettings() {
   if (!cloudEnabled || !cloudUser) return;
-  const { geminiKey, lastSynced, ...rest } = settings; // these stay device-local, never synced
+  const { lastSynced, ...rest } = settings; // sync timestamp itself stays device-local, never synced
   try { await fbDb.collection("users").doc(cloudUser.uid).collection("meta").doc("settings").set(rest); } catch (e) {}
 }
 
@@ -1092,17 +1092,32 @@ async function cloudPullAll(silent) {
   try {
     const snap = await fbDb.collection("users").doc(cloudUser.uid).collection("items").get();
     const toPull = snap.docs.filter(doc => {
+      const remote = doc.data();
       const existing = state.items.find(i => i.id === doc.id);
-      return !(existing && (existing.updated || 0) >= (doc.data().updated || 0));
+      if (!existing) return true;
+      if ((existing.updated || 0) < (remote.updated || 0)) return true;
+      // metadata is up to date, but keep retrying if a past pull came back with fewer photos than
+      // the cloud actually has for it (e.g. a flaky download last time) -- otherwise that gap is
+      // permanent, since nothing else here would ever trigger a re-pull of this item again.
+      const remoteUrlCount = Array.isArray(remote.photos) ? remote.photos.length : 0;
+      const localPhotoCount = Array.isArray(existing.photos) ? existing.photos.length : 0;
+      return localPhotoCount < remoteUrlCount;
     });
     let pulled = 0, failed = 0;
     await Promise.all(toPull.map(async doc => {
       try {
         const remote = doc.data();
         const urls = Array.isArray(remote.photos) ? remote.photos : [];
-        const photos = (await Promise.all(urls.map(url => fetchImage(url).catch(() => null)))).filter(Boolean);
-        await store.put({ ...remote, id: doc.id, photos, photo: photos[0] || null, cloudPhotos: urls, scope: currentScope });
-        pulled++;
+        const fetched = (await Promise.all(urls.map(url => fetchImage(url).catch(() => null)))).filter(Boolean);
+        const existing = state.items.find(i => i.id === doc.id);
+        // Never overwrite a local copy with fewer photos than it already has -- a failed or partial
+        // re-download should lose nothing; keep the existing photos instead of the worse new result.
+        const keepExisting = !!existing && (existing.photos || []).length >= fetched.length;
+        const photos = keepExisting ? existing.photos : fetched;
+        const photo = keepExisting ? existing.photo : (fetched[0] || null);
+        const cloudPhotos = keepExisting ? (existing.cloudPhotos || urls) : urls;
+        await store.put({ ...remote, id: doc.id, photos, photo, cloudPhotos, scope: currentScope });
+        if (urls.length > fetched.length) failed++; else pulled++;
       } catch (e) { failed++; }
     }));
     const remoteIds = new Set(snap.docs.map(d => d.id));
@@ -1272,6 +1287,7 @@ async function importBackup(e) {
     state.items = await store.all(currentScope);
     closeSheet(); render();
     toast(n ? `Imported ${n} ${n === 1 ? "item" : "items"}` : "Nothing new in that backup");
+    if (n && cloudUser) cloudPullAll(true);
   } catch (err) {
     toast("That file isn’t a miCollects backup.");
   }
