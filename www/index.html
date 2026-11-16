@@ -176,6 +176,8 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .btn.primary{background:var(--brass);color:var(--brass-ink);flex:1}
 .btn.ghost{background:transparent;border-color:var(--line)}
 .btn.disabled{opacity:.4;pointer-events:none}
+.done-row{margin-top:22px;justify-content:center}
+.done-row .btn{flex:none;min-height:48px;padding:0 44px}
 .btn svg{width:18px;height:18px;flex:none}
 .cam-row{display:flex;gap:8px;margin-top:10px}
 .cam-row .btn{flex:1}
@@ -1583,7 +1585,7 @@ function openSettings() {
     </div>
     <div id="settingsTabBody">${tabBody}</div>
     <div class="actions"><button class="btn ghost" id="signOutBtn">Sign out</button></div>`}
-    <div class="actions"><button class="btn primary" id="sDone">Done</button></div>`;
+    <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>`;
 
   if (cloudEnabled && !cloudUser) {
     if (!authMode) {
