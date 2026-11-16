@@ -175,7 +175,8 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .welcome-logo{font:800 clamp(32px,10vw,44px)/1 var(--display);letter-spacing:-.03em;color:var(--ink);margin:0;animation:wlogo .6s ease-out}
 .welcome-logo span{color:var(--brass)}
 @keyframes wlogo{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
-.welcome-choices,.welcome-form{width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px;opacity:0;animation:wfade .4s ease-out forwards}
+.welcome-choices,.welcome-form{width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px}
+.welcome-choices{opacity:0;animation:wfade .4s ease-out forwards}
 @keyframes wfade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .welcome-form{text-align:left}
 .welcome-form h2{font:700 22px/1.2 var(--display);margin:0 0 4px;text-align:center}
@@ -189,7 +190,7 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 </head>
 <body>
 
-<div class="welcome" id="welcome" hidden>
+<div class="welcome" id="welcome">
   <p class="welcome-logo">mi<span>Collects</span></p>
   <div class="welcome-choices" id="welcomeChoices" hidden>
     <button type="button" class="btn primary" id="wSignIn">Sign in</button>
@@ -199,9 +200,9 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
   <div class="welcome-form" id="welcomeForm" hidden>
     <h2 id="wfTitle">Sign in</h2>
     <div class="field"><label for="wf-email">Email</label>
-      <input id="wf-email" type="email" autocomplete="email" placeholder="you@example.com"></div>
+      <input id="wf-email" name="email" type="email" autocomplete="email" placeholder="you@example.com"></div>
     <div class="field"><label for="wf-pass">Password</label>
-      <input id="wf-pass" type="password" autocomplete="current-password" placeholder="Password"></div>
+      <input id="wf-pass" name="password" type="password" autocomplete="current-password" placeholder="Password"></div>
     <button type="button" class="btn primary" id="wfSubmit">Sign in</button>
     <p class="hint" id="wfHint"></p>
     <button type="button" class="link plain" id="wfBack">Back</button>
@@ -304,6 +305,11 @@ function timeAgo(ts) {
   const d = Math.round(h / 24); return `${d} day${d === 1 ? "" : "s"} ago`;
 }
 try { Object.assign(settings, JSON.parse(localStorage.getItem("cabinet-settings") || "{}")); } catch (e) {}
+/* #welcome defaults to visible in the markup (not [hidden]) so it's the very first thing painted --
+   waiting for store.open() etc. to resolve before showing it let the home screen flash underneath
+   for a moment on a brand-new install. Hide it immediately, synchronously, if onboarding is already
+   done; this runs before the browser has painted anything, so there's nothing left to flash. */
+if (settings.onboarded) { const w = document.getElementById("welcome"); if (w) w.hidden = true; }
 function saveSettings() { try { localStorage.setItem("cabinet-settings", JSON.stringify(settings)); } catch (e) {} }
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const money = n => settings.currency + nf.format(+n || 0);
@@ -1184,9 +1190,9 @@ function openSettings() {
     <p class="hint" id="authHint">${settings.lastSynced ? `Last synced ${esc(timeAgo(settings.lastSynced))}.` : ""}</p>` : `
     <p class="hint">Sign in to back up your collection to the cloud, sync it to another device, and manage currency, backup and photo-recognition settings.</p>
     <div class="field"><label for="s-email">Email</label>
-      <input id="s-email" type="email" autocomplete="email" placeholder="you@example.com"></div>
+      <input id="s-email" name="email" type="email" autocomplete="email" placeholder="you@example.com"></div>
     <div class="field"><label for="s-pass">Password</label>
-      <input id="s-pass" type="password" autocomplete="current-password" placeholder="For new accounts: 8+ chars, a number, a symbol"></div>
+      <input id="s-pass" name="password" type="password" autocomplete="current-password" placeholder="For new accounts: 8+ chars, a number, a symbol"></div>
     <div class="actions">
       <button class="btn primary" id="signInBtn">Sign in</button>
       <button class="btn ghost" id="signUpBtn">Create account</button>
