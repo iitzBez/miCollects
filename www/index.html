@@ -129,14 +129,20 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .ac-list{position:absolute;left:0;right:0;top:100%;margin:4px 0 0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.18);max-height:180px;overflow-y:auto;z-index:5}
 .ac-list li{padding:9px 10px;border-radius:8px;cursor:pointer;font-size:14px}
 .ac-list li:hover,.ac-list li.active{background:var(--sunk)}
+.clearable{position:relative}
+.clearable input,.clearable textarea{padding-right:34px}
+.clear-btn{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:28px;height:28px;border:0;background:transparent;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;border-radius:50%;display:grid;place-items:center}
+.clear-btn:hover{background:var(--sunk)}
+.clearable.ta .clear-btn{top:10px;transform:none}
+.url-row .clearable{flex:1;min-width:0}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .hint{font-size:13px;color:var(--muted);margin:6px 0 0}
 .hint.warn{color:var(--wish);font-weight:600}
 .url-box{background:var(--sunk);border-radius:14px;padding:12px;margin-bottom:16px}
 .url-box label{display:block;font-size:14px;font-weight:700;margin-bottom:8px}
-.url-row{display:flex;gap:8px}
-.url-row input{flex:1;min-width:0;min-height:46px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px 12px}
-.url-row .btn{flex:none;padding:0 16px}
+.url-row{display:flex;gap:8px;align-items:center}
+.url-row input{flex:1;min-width:0;min-height:48px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px 12px}
+.url-row .btn{flex:none;min-height:40px;padding:0 14px;font-size:14px}
 .url-box .hint a{color:var(--brass);font-weight:600}
 .btn[disabled]{opacity:.6;cursor:progress}
 .photo-main{aspect-ratio:16/10;border-radius:14px;background:var(--sunk);overflow:hidden;display:grid}
@@ -156,6 +162,7 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .btn{min-height:48px;padding:0 20px;border-radius:12px;font-weight:650;cursor:pointer;border:1px solid transparent;display:inline-flex;align-items:center;justify-content:center;gap:8px}
 .btn.primary{background:var(--brass);color:var(--brass-ink);flex:1}
 .btn.ghost{background:transparent;border-color:var(--line)}
+.btn.disabled{opacity:.4;pointer-events:none}
 .btn svg{width:18px;height:18px;flex:none}
 .cam-row{display:flex;gap:8px;margin-top:10px}
 .cam-row .btn{flex:1}
@@ -356,11 +363,12 @@ function card(i) {
     </div></div>`;
 }
 
-const UNGROUPED = /^(uncategorised|no brand|no series|not set)$/i;
+const UNGROUPED = /^(uncategorised|no brand|no series|no scale|not set)$/i;
 function groupLabel(i, g) {
   if (g === "category") return i.category || "Uncategorised";
   if (g === "brand") return i.brand || "No brand";
   if (g === "series") return i.series || "No series";
+  if (g === "scale") return i.scale || "No scale";
   if (g === "condition") return i.condition || "Not set";
   if (g === "priority") return PRI[i.priority || 2] || "Medium";
   if (g === "name") { const c = (String(i.name || "").trim()[0] || "").toUpperCase(); return /[A-Z]/.test(c) ? c : "#"; }
@@ -403,7 +411,7 @@ function render() {
   if (!sorts.some(s => s[0] === state.sort)) state.sort = sorts[0][0];
   $("#sort").innerHTML = sorts.map(([v, l]) => `<option value="${v}"${v === state.sort ? " selected" : ""}>${l}</option>`).join("");
 
-  const groups = [["none", "Don’t group"], ["category", "Category"], ["brand", "Brand"], ["series", "Series"],
+  const groups = [["none", "Don’t group"], ["category", "Category"], ["brand", "Brand"], ["series", "Series"], ["scale", "Scale"],
     owned ? ["condition", "Condition"] : ["priority", "Priority"], ["name", "Name (A–Z)"]];
   if (!groups.some(g => g[0] === state.group)) state.group = "none";
   $("#group").innerHTML = groups.map(([v, l]) => `<option value="${v}"${v === state.group ? " selected" : ""}>${l}</option>`).join("");
@@ -777,6 +785,8 @@ async function fillFromUrl(it, paintPhotos, dup) {
   const url = normUrl(input.value);
   if (!url) { hint.textContent = "That doesn’t look like a web link. It should start with https://"; input.focus(); return; }
   input.value = url;
+  const purlInput = $("#f-producturl");
+  purlInput.value = url; purlInput.dispatchEvent(new Event("input"));
   btn.disabled = true; btn.textContent = "Fetching…"; hint.textContent = "Reading the page…";
   try {
     let page;
@@ -820,6 +830,26 @@ async function fillFromUrl(it, paintPhotos, dup) {
 /* ---------- Item form ---------- */
 let editing = null, photos = [];
 const MAXP = 8;
+
+/* Adds a tappable "x" to every plain text-ish input/textarea inside `root` that doesn't already
+   have one, clearing that field instead of having to select-all and delete manually. Safe to call
+   repeatedly/on overlapping roots -- already-wrapped fields are skipped. */
+function addClearButtons(root) {
+  root.querySelectorAll('input[type="text"], input[type="email"], input[type="password"], input[type="search"], input[type="url"], input:not([type]), textarea').forEach(field => {
+    if (field.closest(".clearable") || field.dataset.noClear != null) return;
+    const wrap = document.createElement("div");
+    wrap.className = "clearable" + (field.tagName === "TEXTAREA" ? " ta" : "");
+    field.parentNode.insertBefore(wrap, field);
+    wrap.appendChild(field);
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.className = "clear-btn"; btn.setAttribute("aria-label", "Clear"); btn.tabIndex = -1; btn.textContent = "×";
+    wrap.appendChild(btn);
+    const sync = () => { btn.hidden = !field.value; };
+    field.addEventListener("input", sync); sync();
+    btn.addEventListener("mousedown", e => e.preventDefault());
+    btn.addEventListener("click", () => { field.value = ""; field.dispatchEvent(new Event("input", { bubbles: true })); field.focus(); });
+  });
+}
 
 /* Custom suggestion dropdown shared by Category/Series/Brand/Scale (not a native <datalist>:
    Android WebView mispositions its popup when the input sits inside this scrolling, animated
@@ -883,6 +913,14 @@ function openForm(item, convert) {
         <button type="button" class="btn primary" id="urlBtn">Fetch</button>
       </div>
       <p class="hint" id="urlHint">${it.url && !isNew ? `<a href="${val(it.url)}" target="_blank" rel="noopener">Open listing</a>` : "Paste a link from an online shop to fill in the details automatically."}</p>
+      <div class="field"><label for="f-producturl">URL</label>
+        <div class="url-row">
+          <input id="f-producturl" type="url" inputmode="url" autocomplete="off" placeholder="Link to view this product" value="${val(it.productUrl)}">
+          <a class="btn ghost" id="producturlOpen" href="#" target="_blank" rel="noopener" aria-label="Open this link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
+          </a>
+        </div>
+      </div>
       <div class="cam-row">
         <button type="button" class="btn ghost" id="camBtn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l2-2h6l2 2h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
@@ -984,6 +1022,17 @@ function openForm(item, convert) {
   $("#f-name").addEventListener("input", dup); dup();
   wireCamera(it, paintPhotos, dup);
 
+  (() => {
+    const purlInput = $("#f-producturl"), purlOpen = $("#producturlOpen");
+    const sync = () => {
+      const v = normUrl(purlInput.value);
+      purlOpen.href = v || "#";
+      purlOpen.classList.toggle("disabled", !v);
+    };
+    purlInput.addEventListener("input", sync); sync();
+    purlOpen.addEventListener("click", e => { if (!normUrl(purlInput.value)) e.preventDefault(); });
+  })();
+
   /* Custom suggestions (not a native <datalist>: Android WebView mispositions its popup when the
      input sits inside this scrolling, animated bottom sheet). */
   wireSuggest("f-cat", "catSuggest", cats);
@@ -1001,6 +1050,7 @@ function openForm(item, convert) {
     closeSheet(); render(); toast("Deleted");
     cloudDeleteItem(it.id);
   }));
+  addClearButtons($("#sheetBody"));
   showSheet();
 }
 
@@ -1011,7 +1061,7 @@ async function save() {
   const name = v("f-name");
   if (!name) { $("#f-name").focus(); toast("Give it a name first"); return; }
   Object.assign(it, { name, category: v("f-cat"), series: v("f-series"), brand: v("f-brand"), scale: v("f-scale"), description: v("f-desc"),
-    url: normUrl(v("f-url")), notes: v("f-notes"), photos: photos.slice(), photo: photos[0] || null, updated: Date.now(),
+    url: normUrl(v("f-url")), productUrl: normUrl(v("f-producturl")), notes: v("f-notes"), photos: photos.slice(), photo: photos[0] || null, updated: Date.now(),
     scope: it.scope || currentScope });
   if (it.list === "owned") {
     Object.assign(it, { condition: v("f-cond"), qty: Math.max(1, parseInt(v("f-qty"), 10) || 1), paid: num(v("f-paid")), value: num(v("f-value")) });
@@ -1298,6 +1348,7 @@ function openSettings() {
     }));
   }
   $("#sDone").addEventListener("click", closeSheet);
+  addClearButtons($("#sheetBody"));
   showSheet();
 }
 
@@ -1410,6 +1461,7 @@ function openWelcomeForm(mode) {
 }
 
 /* ---------- Start ---------- */
+addClearButtons(document.body);
 (async () => {
   await store.open();
   try { state.items = await store.all(currentScope); } catch (e) { state.items = []; }
