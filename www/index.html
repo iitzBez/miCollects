@@ -1302,7 +1302,7 @@ async function ensureItemPhotoSynced(it) {
 const shareEntry = it => ({
   name: it.name || "", brand: it.brand || "", category: it.category || "", scale: it.scale || "",
   description: it.description || "", target: it.target ?? null, priority: it.priority || 2,
-  photo: (it.cloudPhotos && it.cloudPhotos[0]) || null
+  photo: (it.cloudPhotos && it.cloudPhotos[0]) || null, productUrl: it.productUrl || null
 });
 async function pushShareDoc(token, items) {
   await fbDb.collection("shares").doc(token).set({ uid: cloudUser.uid, currency: settings.currency, updated: Date.now(), items });

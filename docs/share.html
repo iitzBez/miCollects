@@ -29,20 +29,26 @@ h1{font:800 clamp(26px,7vw,34px)/1.1 var(--display);letter-spacing:-.02em;margin
 header p{margin:0;color:var(--muted);font-size:14px}
 #status{padding:40px 16px;text-align:center;color:var(--muted)}
 #status[hidden],#grid[hidden]{display:none}
-#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+#grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+@media (min-width:560px){ #grid{grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px} }
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+a.card{text-decoration:none;color:inherit;cursor:pointer;transition:border-color .15s,transform .15s}
+a.card:hover,a.card:active{border-color:var(--brass)}
+@media (hover:hover){ a.card:hover{transform:translateY(-2px)} }
 .ph{aspect-ratio:1/1;background:var(--sunk);display:flex;align-items:center;justify-content:center}
 .ph img{width:100%;height:100%;object-fit:cover}
 .noph{width:40%;height:40%;border-radius:50%;background:var(--line)}
-.body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:4px;flex:1}
-.body h3{margin:0;font:700 16px/1.3 var(--display);letter-spacing:-.01em}
-.meta{margin:0;color:var(--muted);font-size:13px}
-.desc{margin:4px 0 0;font-size:13px;color:var(--ink);opacity:.85;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.foot{margin-top:auto;padding-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px}
-.pri{font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--sunk);color:var(--muted)}
+.body{padding:10px 12px 12px;display:flex;flex-direction:column;gap:4px;flex:1}
+.body h3{margin:0;font:700 15px/1.3 var(--display);letter-spacing:-.01em}
+.meta{margin:0;color:var(--muted);font-size:12px}
+.desc{margin:4px 0 0;font-size:12px;color:var(--ink);opacity:.85;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.foot{margin-top:auto;padding-top:8px;display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}
+.pri{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;background:var(--sunk);color:var(--muted)}
 .pri.p3{background:rgba(220,38,38,.12);color:var(--danger)}
 .pri.p2{background:rgba(37,99,235,.12);color:var(--brass)}
-.price{font:800 15px/1 var(--display);color:var(--ink)}
+.price{font:800 14px/1 var(--display);color:var(--ink)}
+.buy{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);color:var(--brass);font-weight:700;font-size:13px;text-align:center}
+@media (min-width:560px){ .body{padding:12px 14px 14px} .body h3{font-size:16px} .meta,.desc{font-size:13px} .price{font-size:15px} }
 footer{margin-top:36px;text-align:center;color:var(--muted);font-size:12px}
 footer span{color:var(--brass);font-weight:700}
 </style>
@@ -82,7 +88,10 @@ function showStatus(msg) { statusEl.hidden = false; statusEl.textContent = msg; 
 function cardHtml(it, currency) {
   const meta = [it.brand, it.category, it.scale].filter(Boolean).join(" · ");
   const price = it.target != null && it.target !== "" ? `${currency}${nf.format(+it.target || 0)}` : "";
-  return `<div class="card">
+  const link = typeof it.productUrl === "string" && /^https?:\/\//i.test(it.productUrl) ? it.productUrl : null;
+  const tag = link ? "a" : "div";
+  const openAttrs = link ? ` href="${esc(link)}" target="_blank" rel="noopener"` : "";
+  return `<${tag} class="card"${openAttrs}>
     <div class="ph">${it.photo ? `<img src="${esc(it.photo)}" alt="" loading="lazy">` : `<div class="noph"></div>`}</div>
     <div class="body">
       <h3>${esc(it.name || "Untitled")}</h3>
@@ -92,8 +101,9 @@ function cardHtml(it, currency) {
         <span class="pri p${it.priority || 2}">${esc(PRI[it.priority || 2] || "Medium priority")}</span>
         ${price ? `<span class="price">${esc(price)}</span>` : ""}
       </div>
+      ${link ? `<div class="buy">Buy now →</div>` : ""}
     </div>
-  </div>`;
+  </${tag}>`;
 }
 
 async function main() {
