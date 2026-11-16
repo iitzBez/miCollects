@@ -201,6 +201,7 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 .link{border:0;background:none;color:var(--danger);padding:4px 0 10px;cursor:pointer;font-size:14px;font-weight:600}
 .link.plain{color:var(--brass)}
 .actions{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap}
+#showSignInBtn,#showSignUpBtn{flex:1}
 .btn{min-height:48px;padding:0 20px;border-radius:12px;font-weight:650;cursor:pointer;border:1px solid transparent;display:inline-flex;align-items:center;justify-content:center;gap:8px}
 .btn.primary{background:var(--brass);color:var(--brass-ink);flex:1}
 .btn.ghost{background:transparent;border-color:var(--line)}
@@ -397,6 +398,24 @@ applyTheme();
    done; this runs before the browser has painted anything, so there's nothing left to flash. */
 if (settings.onboarded) { const w = document.getElementById("welcome"); if (w) w.hidden = true; }
 function saveSettings() { try { localStorage.setItem("cabinet-settings", JSON.stringify(settings)); } catch (e) {} }
+
+/* Auto sign-out after 30 min of inactivity, for anyone signing in on a shared/borrowed device.
+   "Inactivity" means time spent backgrounded (screen off, app switched away, or fully closed) --
+   never while the app is open and in use, however long that session runs. The timestamp is
+   refreshed whenever the app leaves or re-enters the foreground; the only moment it's actually
+   checked is on that *next* resume (or a fresh launch), per markActiveAndCheckTimeout() below. */
+const INACTIVITY_LIMIT_MS = 1 * 60 * 1000; // TEMP: 1 min for testing -- change back to 30 before shipping for real
+const LAST_ACTIVE_KEY = "mc-last-active";
+function markActive() { try { localStorage.setItem(LAST_ACTIVE_KEY, String(Date.now())); } catch (e) {} }
+function markActiveAndCheckTimeout() {
+  let exceeded = false;
+  try {
+    const last = +(localStorage.getItem(LAST_ACTIVE_KEY) || 0);
+    exceeded = !!last && (Date.now() - last) > INACTIVITY_LIMIT_MS;
+  } catch (e) {}
+  markActive();
+  return exceeded;
+}
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const money = n => settings.currency + nf.format(+n || 0);
 const LAYOUTS = ["grid1", "grid2", "grid3", "list"];
@@ -602,10 +621,16 @@ function hideSheet() {
   $("#scrim").hidden = true; $("#sheet").hidden = true; document.body.style.overflow = "";
   sheetOpen = false;
 }
+/* Set right before any programmatic history.back() that closes something we've already handled
+   synchronously (hideSheet/exitSelectMode/hidePicker already ran) -- popstate fires later/async, and
+   without this the handler below can't tell that apart from a real back-navigation, so it falls
+   through to closing whatever's still open underneath (e.g. picking a Theme option, nested inside
+   the open Settings sheet, was incorrectly closing Settings too). */
+let suppressNextPopstate = false;
 function closeSheet() {
   if (!sheetOpen) return;
   hideSheet();
-  try { if (history.state && history.state.sheet) history.back(); } catch (e) {}
+  try { if (history.state && history.state.sheet) { suppressNextPopstate = true; history.back(); } } catch (e) {}
 }
 
 /* Multi-select (long-press or the Share icon) also pushes a history entry on entry, the same way
@@ -626,7 +651,7 @@ function exitSelectMode() {
 function exitSelectModeAndPop() {
   if (!state.selecting) return;
   exitSelectMode();
-  try { if (history.state && history.state.select) history.back(); } catch (e) {}
+  try { if (history.state && history.state.select) { suppressNextPopstate = true; history.back(); } } catch (e) {}
 }
 
 /* ---------- Picker (replaces native <select> option lists with an in-app styled sheet --
@@ -658,10 +683,11 @@ function hidePicker() {
 function closePicker() {
   if (!pickerOpen) return;
   hidePicker();
-  try { if (history.state && history.state.picker) history.back(); } catch (e) {}
+  try { if (history.state && history.state.picker) { suppressNextPopstate = true; history.back(); } } catch (e) {}
 }
 
 addEventListener("popstate", () => {
+  if (suppressNextPopstate) { suppressNextPopstate = false; return; }
   if (pickerOpen) { hidePicker(); return; }
   if (state.selecting) { exitSelectMode(); return; }
   if (sheetOpen) hideSheet();
@@ -684,6 +710,10 @@ addEventListener("keydown", e => {
   P.App.addListener("backButton", ({ canGoBack }) => {
     if (canGoBack) history.back(); else P.App.exitApp();
   });
+  /* Refreshes the inactivity clock on every foreground/background transition, so a long-lived
+     session that's backgrounded and resumed several times always measures from the *most recent*
+     transition -- not just whenever the app happened to cold-start. */
+  P.App.addListener("appStateChange", () => markActive());
 })();
 
 /* ---------- Photos ---------- */
@@ -1391,6 +1421,11 @@ const firebaseConfig = {
 const cloudEnabled = firebaseConfig.apiKey !== "PASTE_ME";
 let cloudUser = null, appReady = false, currentScope = "local", authResolvedOnce = false, welcomeShown = false;
 let fbAuth = null, fbDb = null, fbStorage = null;
+/* Checked once, synchronously, before Firebase has had a chance to resolve the previous session --
+   if too much background time passed since the app was last active, the sign-in restored a moment
+   later gets immediately reversed (see onAuthStateChanged below) instead of ever reaching the UI. */
+let pendingInactivitySignOut = markActiveAndCheckTimeout();
+let forceWelcomeNext = false;
 if (cloudEnabled) {
   firebase.initializeApp(firebaseConfig);
   fbAuth = firebase.auth(); fbDb = firebase.firestore(); fbStorage = firebase.storage();
@@ -1677,19 +1712,27 @@ function refreshSettingsIfOpen() {
 /* Items are partitioned by `scope` (see store.all above): switching accounts, or signing out back to
    "local", swaps which partition `state.items` shows, so one account's synced items never leak into
    another account's view or the signed-out local-only view. */
-function maybeShowWelcome() {
-  if (welcomeShown || !appReady || (cloudEnabled && !authResolvedOnce)) return;
-  if (!settings.onboarded) { welcomeShown = true; showWelcome(); }
+function maybeShowWelcome(force) {
+  if (!appReady || (cloudEnabled && !authResolvedOnce)) return;
+  if (!force && welcomeShown) return;
+  if (force || !settings.onboarded) { welcomeShown = true; showWelcome(); }
 }
 if (cloudEnabled) {
   fbAuth.onAuthStateChanged(async user => {
+    if (user && pendingInactivitySignOut) {
+      pendingInactivitySignOut = false;
+      forceWelcomeNext = true;
+      try { await fbAuth.signOut(); } catch (e) {}
+      return; // the resulting null-user call below finishes the job
+    }
     cloudUser = user;
     currentScope = user ? user.uid : "local";
     if (appReady) { state.items = await store.all(currentScope); render(); }
     if (appReady && user) cloudPullAll(true);
     refreshSettingsIfOpen();
     if (!authResolvedOnce) { authResolvedOnce = true; if (user) { settings.onboarded = true; saveSettings(); } }
-    maybeShowWelcome();
+    maybeShowWelcome(forceWelcomeNext);
+    forceWelcomeNext = false;
   });
 }
 
