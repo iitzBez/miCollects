@@ -604,10 +604,10 @@ function wireCamera(it, paintPhotos, dup) {
 
   btn.addEventListener("click", async () => {
     const P = window.Capacitor && window.Capacitor.Plugins;
-    if (!P || !P.Camera) { show("Taking a picture only works in the Android app, not this preview."); return; }
+    if (!P || !P.Camera) { show("Adding a photo only works in the Android app, not this preview."); return; }
     btn.disabled = true;
     try {
-      const shot = await P.Camera.getPhoto({ quality: 80, resultType: "base64", source: "CAMERA", saveToGallery: false });
+      const shot = await P.Camera.getPhoto({ quality: 80, resultType: "base64", source: "PROMPT", saveToGallery: false });
       if (!shot || !shot.base64String) return;
       let compressed;
       try { compressed = await compressSrc(`data:image/${shot.format || "jpeg"};base64,${shot.base64String}`); }
@@ -618,7 +618,7 @@ function wireCamera(it, paintPhotos, dup) {
       doneBtn.hidden = false; doneBtn.disabled = false; doneBtn.textContent = "Recognise photos";
       if (camBatch.length >= CAM_MAX) { btn.hidden = true; show(`Photo ${camBatch.length} of ${CAM_MAX} added. Tap Recognise to fill in the details.`); }
       else { btn.textContent = "Add Another Photo"; show(`Photo ${camBatch.length} of ${CAM_MAX} added — add the back or a price tag, or tap Recognise to fill in details now.`); }
-    } catch (e) { if (!/cancel/i.test(String(e && e.message))) show("Couldn’t open the camera."); }
+    } catch (e) { if (!/cancel/i.test(String(e && e.message))) show("Couldn’t get that photo."); }
     finally { btn.disabled = false; }
   });
 
@@ -870,7 +870,7 @@ function openForm(item, convert) {
       <div class="cam-row">
         <button type="button" class="btn ghost" id="camBtn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l2-2h6l2 2h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
-          Take a Picture
+          Add a Photo
         </button>
         <button type="button" class="btn ghost" id="camDoneBtn" hidden>Recognise photos</button>
       </div>
@@ -1221,7 +1221,7 @@ function openSettings() {
     <div class="field"><label for="s-cur">Currency symbol</label>
       <input id="s-cur" value="${esc(settings.currency)}" maxlength="4" autocomplete="off"></div>
     <h3>Photo recognition</h3>
-    <p class="hint">To auto-fill details from a photo (Take a Picture), paste in a free Gemini API key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Without one, photos are still added, just not recognised.</p>
+    <p class="hint">To auto-fill details from a photo (Add a Photo), paste in a free Gemini API key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Without one, photos are still added, just not recognised.</p>
     <div class="field"><label for="s-gemini">Gemini API key</label>
       <div class="url-row">
         <input id="s-gemini" type="password" value="${esc(settings.geminiKey)}" placeholder="Paste your API key" autocomplete="off">
