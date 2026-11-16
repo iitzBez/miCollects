@@ -28,6 +28,9 @@ jobs:
           if [ ! -d android ]; then npx cap add android; fi
           npx cap sync android
 
+      - name: Generate app icon from resources/
+        run: npx capacitor-assets generate --android
+
       - name: Use pinned debug keystore
         run: |
           mkdir -p ~/.android
