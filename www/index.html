@@ -529,22 +529,15 @@ async function fetchPage(url) {
 async function fetchImage(src) {
   const H = nativeHttp();
   if (H) {
-    /* Pass query params (Firebase Storage download URLs carry alt=media&token=... here) via `params`
-       rather than leaving them embedded in `url` -- CapacitorHttp re-encodes query strings on native
-       by default, and re-encoding an already-encoded token risks corrupting it, which would make
-       every single download fail identically (no CORS/auth involved: Storage's download token grants
-       access regardless of auth state, confirmed directly against the real bucket). */
-    const u = new URL(src);
-    const params = {}; u.searchParams.forEach((v, k) => { params[k] = v; });
-    const r = await H.get({ url: u.origin + u.pathname, params, responseType: "blob", connectTimeout: 15000, readTimeout: 20000,
+    const r = await H.get({ url: src, responseType: "blob", connectTimeout: 15000, readTimeout: 20000,
       headers: { "User-Agent": UA, "Accept": "image/avif,image/webp,image/*,*/*;q=0.8" } });
-    if (r.status >= 400 || !r.data) throw new Error("image");
+    if (r.status >= 400 || !r.data) throw Object.assign(new Error(`image fetch failed (HTTP ${r.status})`), { status: r.status });
     const h = r.headers || {};
     const ct = String(h["Content-Type"] || h["content-type"] || "image/jpeg").split(";")[0];
     return compressSrc(`data:${ct};base64,${r.data}`);
   }
   const r = await fetch(src, { credentials: "omit" });
-  if (!r.ok) throw new Error("image");
+  if (!r.ok) throw Object.assign(new Error(`image fetch failed (HTTP ${r.status})`), { status: r.status });
   return compress(await r.blob());
 }
 
@@ -1110,12 +1103,12 @@ async function cloudPullAll(silent) {
       const localPhotoCount = Array.isArray(existing.photos) ? existing.photos.length : 0;
       return localPhotoCount < remoteUrlCount;
     });
-    let pulled = 0, failed = 0;
+    let pulled = 0, failed = 0, lastPhotoError = null;
     await Promise.all(toPull.map(async doc => {
       try {
         const remote = doc.data();
         const urls = Array.isArray(remote.photos) ? remote.photos : [];
-        const fetched = (await Promise.all(urls.map(url => fetchImage(url).catch(() => null)))).filter(Boolean);
+        const fetched = (await Promise.all(urls.map(url => fetchImage(url).catch(e => { lastPhotoError = e; return null; })))).filter(Boolean);
         const existing = state.items.find(i => i.id === doc.id);
         // Never overwrite a local copy with fewer photos than it already has -- a failed or partial
         // re-download should lose nothing; keep the existing photos instead of the worse new result.
@@ -1125,7 +1118,7 @@ async function cloudPullAll(silent) {
         const cloudPhotos = keepExisting ? (existing.cloudPhotos || urls) : urls;
         await store.put({ ...remote, id: doc.id, photos, photo, cloudPhotos, scope: currentScope });
         if (urls.length > fetched.length) failed++; else pulled++;
-      } catch (e) { failed++; }
+      } catch (e) { failed++; lastPhotoError = e; }
     }));
     const remoteIds = new Set(snap.docs.map(d => d.id));
     for (const it of state.items) {
@@ -1139,7 +1132,8 @@ async function cloudPullAll(silent) {
     state.items = await store.all(currentScope);
     render();
     settings.lastSynced = Date.now(); saveSettings();
-    const msg = failed ? `Synced, but ${failed} ${failed === 1 ? "item" : "items"} didn’t come through — tap Sync now to retry.`
+    const errDetail = lastPhotoError ? ` [${lastPhotoError.status ? "HTTP " + lastPhotoError.status : lastPhotoError.message || "error"}]` : "";
+    const msg = failed ? `Synced, but ${failed} ${failed === 1 ? "item" : "items"} didn’t come through${errDetail} — tap Sync now to retry.`
       : pulled ? `Synced — updated ${pulled} ${pulled === 1 ? "item" : "items"}` : "Synced — everything’s up to date";
     if (!silent || failed) toast(msg);
     setHint(`${msg} (just now)`);
