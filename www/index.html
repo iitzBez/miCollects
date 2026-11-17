@@ -406,7 +406,7 @@ try { Object.assign(settings, JSON.parse(localStorage.getItem("cabinet-settings"
    here, before first paint, so the #welcome-hiding decision below can account for it immediately --
    waiting for Firebase to resolve the restored session first is what caused the home screen to
    flash before redirecting to the sign-in screen on a stale reopen. */
-const INACTIVITY_LIMIT_MS = 1 * 60 * 1000; // TEMP: 1 min for testing -- change back to 30 before shipping for real
+const INACTIVITY_LIMIT_MS = 7 * 24 * 60 * 60 * 1000; // 7 days of backgrounded/closed inactivity before auto sign-out
 const LAST_ACTIVE_KEY = "mc-last-active";
 function markActive() { try { localStorage.setItem(LAST_ACTIVE_KEY, String(Date.now())); } catch (e) {} }
 function markActiveAndCheckTimeout() {
