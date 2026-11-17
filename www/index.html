@@ -610,8 +610,10 @@ function render() {
   const ha = $("#headerAvatar");
   if (cloudUser) {
     ha.hidden = false;
-    const initials = (((settings.firstName || "").trim()[0] || "") + ((settings.lastName || "").trim()[0] || "")) || (cloudUser.email || "?")[0].toUpperCase();
-    ha.innerHTML = settings.avatarUrl ? `<img src="${esc(settings.avatarUrl)}" alt="">` : `<span>${esc(initials)}</span>`;
+    const firstInitial = (settings.firstName || "").trim()[0];
+    ha.innerHTML = settings.avatarUrl ? `<img src="${esc(settings.avatarUrl)}" alt="">`
+      : firstInitial ? `<span>${esc(firstInitial.toUpperCase())}</span>`
+      : `<img src="favicon.png" alt="">`;
   } else {
     ha.hidden = true; ha.innerHTML = "";
   }
