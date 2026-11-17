@@ -12,7 +12,7 @@
 <style>
 :root{
   --bg:#FFFFFF;--surface:#FFFFFF;--sunk:#F1F4F8;--ink:#0F172A;--muted:#64748B;--line:#E2E8F0;
-  --brass:#2563EB;--brass-ink:#FFFFFF;--wish:#2563EB;--danger:#DC2626;--scrim:rgba(15,23,42,.45);
+  --brass:#2563EB;--brass-ink:#FFFFFF;--wish:#2563EB;--danger:#DC2626;--star:#F59E0B;--scrim:rgba(15,23,42,.45);
   --display:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --body:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
   color-scheme:light;
@@ -23,13 +23,13 @@
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     --bg:#0F141C;--surface:#171D27;--sunk:#1F2632;--ink:#F1F5F9;--muted:#94A3B8;--line:#2A3342;
-    --brass:#3B82F6;--brass-ink:#FFFFFF;--wish:#60A5FA;--danger:#F87171;--scrim:rgba(0,0,0,.6);
+    --brass:#3B82F6;--brass-ink:#FFFFFF;--wish:#60A5FA;--danger:#F87171;--star:#FBBF24;--scrim:rgba(0,0,0,.6);
     color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
   --bg:#0F141C;--surface:#171D27;--sunk:#1F2632;--ink:#F1F5F9;--muted:#94A3B8;--line:#2A3342;
-  --brass:#3B82F6;--brass-ink:#FFFFFF;--wish:#60A5FA;--danger:#F87171;--scrim:rgba(0,0,0,.6);
+  --brass:#3B82F6;--brass-ink:#FFFFFF;--wish:#60A5FA;--danger:#F87171;--star:#FBBF24;--scrim:rgba(0,0,0,.6);
   color-scheme:dark;
 }
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
@@ -175,6 +175,13 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 .pw-toggle svg{width:18px;height:18px}
 .url-row .clearable{flex:1;min-width:0}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.star-rating{display:flex;gap:4px}
+.star-btn{background:none;border:0;padding:4px;margin:-4px;cursor:pointer;position:relative;display:inline-grid}
+.star-btn svg{width:28px;height:28px;display:block;stroke-linejoin:round}
+.star-outline{fill:none;stroke:var(--line);stroke-width:1.5}
+.star-fill{position:absolute;top:4px;left:4px;fill:var(--star);stroke:none;clip-path:inset(0 100% 0 0)}
+.star-btn[data-state="half"] .star-fill{clip-path:inset(0 50% 0 0)}
+.star-btn[data-state="full"] .star-fill{clip-path:inset(0 0 0 0)}
 .hint{font-size:13px;color:var(--muted);margin:6px 0 0}
 .auth-msg:not(:empty){text-align:center;color:var(--danger);font-weight:600}
 .hint.warn{color:var(--wish);font-weight:600}
@@ -463,6 +470,32 @@ let sortOptions = [], groupOptions = [];
 const PRI = { 3: "High", 2: "Medium", 1: "Low" };
 const CONDITIONS = ["", "Sealed / new in box", "Mint", "Near mint", "Excellent", "Good", "Fair", "Poor"];
 const CHEVRON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
+const STAR_PATH_D = "m12 3 2.9 5.88 6.49.94-4.7 4.58 1.11 6.47L12 17.77l-5.8 3.05 1.11-6.47-4.7-4.58 6.49-.94Z";
+/* "full" >= this star's number, "half" >= half a star short of it, else "empty". */
+function starState(rating, n) { return rating >= n ? "full" : rating >= n - 0.5 ? "half" : "empty"; }
+function starsHtml(id, rating) {
+  const r = Math.round((+rating || 0) * 2) / 2; // snap to the nearest half, defensively
+  return `<div class="star-rating" id="${id}" data-value="${r}" role="radiogroup" aria-label="Rating">
+    ${[1, 2, 3, 4, 5].map(n => `<button type="button" class="star-btn" data-star="${n}" data-state="${starState(r, n)}" aria-label="${n} star${n > 1 ? "s" : ""}">
+      <svg class="star-outline" viewBox="0 0 24 24"><path d="${STAR_PATH_D}"/></svg>
+      <svg class="star-fill" viewBox="0 0 24 24"><path d="${STAR_PATH_D}"/></svg>
+    </button>`).join("")}
+  </div>`;
+}
+function wireStars(id) {
+  const el = $("#" + id);
+  el.addEventListener("click", e => {
+    const b = e.target.closest(".star-btn"); if (!b) return;
+    const n = +b.dataset.star;
+    // Left half of the star sets a half rating, right half sets a full one.
+    const rect = b.getBoundingClientRect();
+    const picked = (e.clientX - rect.left) < rect.width / 2 ? n - 0.5 : n;
+    const current = +el.dataset.value || 0;
+    const next = current === picked ? 0 : picked; // tapping the current rating again clears it
+    el.dataset.value = next;
+    el.querySelectorAll(".star-btn").forEach(btn => btn.setAttribute("data-state", starState(next, +btn.dataset.star)));
+  });
+}
 
 /* Per-option icons for the picker sheet (Option A design). */
 const ICONS = {
@@ -1305,6 +1338,7 @@ function openForm(item, convertTo) {
         <input id="f-scale" value="${val(it.scale)}" placeholder="e.g. 1:18, 1/6" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list">
         <ul class="ac-list" id="scaleSuggest" hidden></ul></div>
     </div>
+    <div class="field"><label>Rating</label>${starsHtml("f-rating", it.rating)}</div>
     ${owned ? `
     <div class="row">
       <div class="field"><label for="f-cond">Condition</label>
@@ -1402,6 +1436,7 @@ function openForm(item, convertTo) {
   wireSuggest("f-series", "seriesSuggest", seriesList);
   wireSuggest("f-brand", "brandSuggest", brands);
   wireSuggest("f-scale", "scaleSuggest", scales);
+  wireStars("f-rating");
 
   const condBtn = $("#f-cond");
   if (condBtn) condBtn.addEventListener("click", () => openPicker("Condition", CONDITIONS.map(c => [c, c || "Not set", CONDITION_ICONS[c]]), condBtn.value, v => {
@@ -1455,7 +1490,7 @@ async function save() {
   if (!name) { $("#f-name").focus(); toast("Give it a name first"); return; }
   Object.assign(it, { name, category: v("f-cat"), series: v("f-series"), brand: v("f-brand"), scale: v("f-scale"), description: v("f-desc"),
     url: normUrl(v("f-url")), productUrl: normUrl(v("f-producturl")), notes: v("f-notes"), photos: photos.slice(), photo: photos[0] || null, updated: Date.now(),
-    scope: it.scope || currentScope });
+    rating: +$("#f-rating").dataset.value || 0, scope: it.scope || currentScope });
   if (it.list === "owned") {
     Object.assign(it, { condition: v("f-cond"), qty: Math.max(1, parseInt(v("f-qty"), 10) || 1), paid: num(v("f-paid")), value: num(v("f-value")), purchaseDate: v("f-purchdate") || null, buildHours: num(v("f-buildh")), buildMinutes: num(v("f-buildm")) });
   } else {
