@@ -61,7 +61,12 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .icon-anim-login .login-dot-4{animation-delay:.45s}
 .icon-btn.syncing::after{content:"";position:absolute;top:2px;right:2px;width:10px;height:10px;border-radius:50%;background:var(--brass);box-shadow:0 0 0 2px var(--surface);animation:syncPulse 1s ease-in-out infinite}
 @keyframes syncPulse{0%,100%{opacity:1}50%{opacity:.25}}
-@media (prefers-reduced-motion:reduce){.icon-btn.syncing::after{animation:none}}
+.icon-btn.has-news::after{content:"";position:absolute;top:2px;right:2px;width:10px;height:10px;border-radius:50%;background:var(--brass);box-shadow:0 0 0 2px var(--surface);animation:syncPulse 1s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.icon-btn.syncing::after,.icon-btn.has-news::after{animation:none}}
+.wn-version h3{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.wn-version .wn-date{font:600 12px/1 var(--body);color:var(--muted);white-space:nowrap}
+.wn-items{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.wn-items li{font-size:14px;line-height:1.4;color:var(--ink)}
 .icon-btn svg{width:20px;height:20px}
 
 /* Toolbar */
@@ -317,6 +322,9 @@ input.has-marquee::placeholder{color:transparent}
     <h1 id="title">Collection</h1>
     <p id="stats"></p>
   </div>
+  <button class="icon-btn" id="whatsNewBtn" aria-label="What's new">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.45.9 1.15.9 1.9V16h5.4v-.3c0-.75.3-1.45.9-1.9A6 6 0 0 0 12 3Z"/></svg>
+  </button>
   <button class="icon-btn" id="settingsBtn" aria-label="Settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
   </button>
@@ -423,7 +431,7 @@ const store = {
 };
 
 const settings = { currency: "R", layout: "grid2", sort: "recent", group: "none", geminiKey: "", onboarded: false, lastSynced: null, wishlistShareToken: null,
-  firstName: "", lastName: "", phone: "", avatarUrl: "", theme: "system" };
+  firstName: "", lastName: "", phone: "", avatarUrl: "", theme: "system", whatsNewSeenVersion: "" };
 function timeAgo(ts) {
   if (!ts) return "";
   const s = Math.max(1, Math.round((Date.now() - ts) / 1000));
@@ -558,10 +566,27 @@ const ICONS = {
   rarity: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 12L2 9Z"/><path d="M11 3 8 9l4 12 4-12-3-6"/><path d="M2 9h20"/></svg>`,
   account: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>`,
   login: `<svg class="icon-anim-login" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--brass)"><circle cx="12" cy="6.5" r="3.2"/><path d="M5.5 15.5a6.5 6.5 0 0 1 13 0"/><rect x="4" y="18" width="16" height="4.5" rx="2.25"/><circle class="login-dot login-dot-1" cx="7.2" cy="20.25" r=".9" fill="currentColor" stroke="none"/><circle class="login-dot login-dot-2" cx="10.4" cy="20.25" r=".9" fill="currentColor" stroke="none"/><circle class="login-dot login-dot-3" cx="13.6" cy="20.25" r=".9" fill="currentColor" stroke="none"/><circle class="login-dot login-dot-4" cx="16.8" cy="20.25" r=".9" fill="currentColor" stroke="none"/></svg>`,
-  userPlus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="7" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg>`
+  userPlus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="7" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg>`,
+  lightbulb: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.45.9 1.15.9 1.9V16h5.4v-.3c0-.75.3-1.45.9-1.9A6 6 0 0 0 12 3Z"/></svg>`
 };
 const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed, "Mint": ICONS.layers, "Near mint": ICONS.layers, "Excellent": ICONS.excellent, "Good": ICONS.good, "Fair": ICONS.fair, "Poor": ICONS.poor };
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
+
+/* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
+const APP_VERSION = "1.0.1";
+const WHATS_NEW = [
+  { version: "1.0.1", date: "17 Nov 2026", items: [
+    "Added this “What’s New” page — tap the lightbulb in the header any time to see what’s changed."
+  ] },
+  { version: "1.0.0", date: "17 Nov 2026", items: [
+    "Shared collection and wishlist links now open on share.micollects.co.za instead of a github.io address.",
+    "Changing or removing your profile picture, or your name, now updates the home screen right away.",
+    "Added pull-to-sync — drag down anywhere on the Collection or Wishlist screen to sync instantly.",
+    "Sign up now asks for your Name and Surname, and always capitalises them properly.",
+    "Moved My Account out of Settings — it now opens from the account button in the header, and the gear icon only holds General and API.",
+    "Added a round account button to the header — sign in or create an account, or jump straight to your profile once signed in."
+  ] }
+];
 const price = i => i.list === "owned" ? (+i.value || 0) * (+i.qty || 1) : (+i.target || 0);
 const norm = s => String(s || "").trim().toLowerCase();
 
@@ -630,6 +655,8 @@ function render() {
   const owned = state.tab === "owned";
   const tabItems = state.items.filter(i => i.list === state.tab);
   $("#title").textContent = owned ? "Collection" : "Wishlist";
+
+  $("#whatsNewBtn").classList.toggle("has-news", WHATS_NEW[0].version !== settings.whatsNewSeenVersion);
 
   const ha = $("#headerAvatar");
   if (cloudUser) {
@@ -2164,7 +2191,8 @@ function generalTabHtml() {
     <div class="field"><label for="s-theme">Theme</label>
       <button type="button" class="select-btn" id="s-theme"><span>${esc((THEME_OPTIONS.find(t => t[0] === settings.theme) || THEME_OPTIONS[0])[1])}</span>${CHEVRON_SVG}</button></div>
     <p class="hint">"System" follows your phone's own light/dark setting.</p>
-    <div class="more"><button class="btn danger" id="wipeBtn">Delete everything</button></div>`;
+    <div class="more"><button class="btn danger" id="wipeBtn">Delete everything</button></div>
+    <p class="hint" style="text-align:center;margin-top:18px">miCollects v${esc(APP_VERSION)}</p>`;
 }
 
 function apiTabHtml() {
@@ -2276,6 +2304,21 @@ function openAccount() {
   $("#sDone").addEventListener("click", closeSheet);
   addClearButtons($("#sheetBody"));
   addPasswordToggles($("#sheetBody"));
+  showSheet();
+}
+
+function openWhatsNew() {
+  settings.whatsNewSeenVersion = WHATS_NEW[0].version; saveSettings();
+  $("#whatsNewBtn").classList.remove("has-news");
+  $("#sheetBody").innerHTML = `
+    <h2 id="sheetTitle">What's New</h2>
+    ${WHATS_NEW.map(v => `
+      <div class="wn-version">
+        <h3>v${esc(v.version)}<span class="wn-date">${esc(v.date)}</span></h3>
+        <ul class="wn-items">${v.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul>
+      </div>`).join("")}
+    <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>`;
+  $("#sDone").addEventListener("click", closeSheet);
   showSheet();
 }
 
@@ -2479,6 +2522,7 @@ document.querySelectorAll(".nav button").forEach(b => b.addEventListener("click"
 }));
 $("#addBtn").addEventListener("click", () => openForm(null));
 $("#settingsBtn").addEventListener("click", openSettings);
+$("#whatsNewBtn").addEventListener("click", openWhatsNew);
 $("#headerAvatar").addEventListener("click", () => {
   if (cloudUser) { openAccount(); return; }
   openPicker("Account", [["signin", "Sign in", ICONS.login], ["signup", "Create account", ICONS.userPlus]], null, v => {
