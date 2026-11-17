@@ -390,27 +390,12 @@ function timeAgo(ts) {
   const d = Math.round(h / 24); return `${d} day${d === 1 ? "" : "s"} ago`;
 }
 try { Object.assign(settings, JSON.parse(localStorage.getItem("cabinet-settings") || "{}")); } catch (e) {}
-/* "system" means no override: the prefers-color-scheme media query in the CSS takes it from there.
-   Applied immediately on load (before first paint) so there's no flash of the wrong theme, and again
-   whenever the user changes it in Settings. */
-function applyTheme() {
-  const root = document.documentElement;
-  if (settings.theme === "light" || settings.theme === "dark") root.setAttribute("data-theme", settings.theme);
-  else root.removeAttribute("data-theme");
-}
-applyTheme();
-/* #welcome defaults to visible in the markup (not [hidden]) so it's the very first thing painted --
-   waiting for store.open() etc. to resolve before showing it let the home screen flash underneath
-   for a moment on a brand-new install. Hide it immediately, synchronously, if onboarding is already
-   done; this runs before the browser has painted anything, so there's nothing left to flash. */
-if (settings.onboarded) { const w = document.getElementById("welcome"); if (w) w.hidden = true; }
-function saveSettings() { try { localStorage.setItem("cabinet-settings", JSON.stringify(settings)); } catch (e) {} }
-
 /* Auto sign-out after 30 min of inactivity, for anyone signing in on a shared/borrowed device.
    "Inactivity" means time spent backgrounded (screen off, app switched away, or fully closed) --
-   never while the app is open and in use, however long that session runs. The timestamp is
-   refreshed whenever the app leaves or re-enters the foreground; the only moment it's actually
-   checked is on that *next* resume (or a fresh launch), per markActiveAndCheckTimeout() below. */
+   never while the app is open and in use, however long that session runs. Computed synchronously
+   here, before first paint, so the #welcome-hiding decision below can account for it immediately --
+   waiting for Firebase to resolve the restored session first is what caused the home screen to
+   flash before redirecting to the sign-in screen on a stale reopen. */
 const INACTIVITY_LIMIT_MS = 1 * 60 * 1000; // TEMP: 1 min for testing -- change back to 30 before shipping for real
 const LAST_ACTIVE_KEY = "mc-last-active";
 function markActive() { try { localStorage.setItem(LAST_ACTIVE_KEY, String(Date.now())); } catch (e) {} }
@@ -423,6 +408,30 @@ function markActiveAndCheckTimeout() {
   markActive();
   return exceeded;
 }
+let pendingInactivitySignOut = markActiveAndCheckTimeout();
+/* "system" means no override: the prefers-color-scheme media query in the CSS takes it from there.
+   Applied immediately on load (before first paint) so there's no flash of the wrong theme, and again
+   whenever the user changes it in Settings. */
+function applyTheme() {
+  const root = document.documentElement;
+  if (settings.theme === "light" || settings.theme === "dark") root.setAttribute("data-theme", settings.theme);
+  else root.removeAttribute("data-theme");
+}
+applyTheme();
+/* #welcome defaults to visible in the markup (not [hidden]) so it's the very first thing painted --
+   waiting for store.open() etc. to resolve before showing it let the home screen flash underneath
+   for a moment on a brand-new install. Hide it immediately, synchronously, if onboarding is already
+   done; this runs before the browser has painted anything, so there's nothing left to flash. Held
+   off when the inactivity timeout's already been blown, though: we don't yet know (synchronously)
+   whether the restored session is a cloud account about to be force-signed-out -- hideWelcomeIfOnboarded()
+   gets called once that's known, from onAuthStateChanged. */
+function hideWelcomeIfOnboarded() {
+  if (!settings.onboarded) return;
+  const w = document.getElementById("welcome");
+  if (w) w.hidden = true;
+}
+if (!pendingInactivitySignOut) hideWelcomeIfOnboarded();
+function saveSettings() { try { localStorage.setItem("cabinet-settings", JSON.stringify(settings)); } catch (e) {} }
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const money = n => settings.currency + nf.format(+n || 0);
 const LAYOUTS = ["grid1", "grid2", "grid3", "list"];
@@ -717,10 +726,15 @@ addEventListener("keydown", e => {
   P.App.addListener("backButton", ({ canGoBack }) => {
     if (canGoBack) history.back(); else P.App.exitApp();
   });
-  /* Refreshes the inactivity clock on every foreground/background transition, so a long-lived
-     session that's backgrounded and resumed several times always measures from the *most recent*
-     transition -- not just whenever the app happened to cold-start. */
-  P.App.addListener("appStateChange", () => markActive());
+  /* Going to background (screen lock included) just marks when the inactivity clock started.
+     Coming back to foreground is the only moment that clock actually gets checked -- this is what
+     makes the 30-min sign-out work for a long-lived process that's locked/unlocked repeatedly
+     without ever being fully closed, which a blind markActive() on every transition can't do: it
+     would reset the clock on the very same unlock event that's supposed to be checking it. */
+  P.App.addListener("appStateChange", ({ isActive }) => {
+    if (!isActive) { markActive(); return; }
+    if (markActiveAndCheckTimeout() && cloudUser) { forceWelcomeNext = true; fbAuth.signOut().catch(() => {}); }
+  });
 })();
 
 /* ---------- Photos ---------- */
@@ -1433,10 +1447,7 @@ const RETIRED_STORAGE_HOSTS = ["micollects.firebasestorage.app"];
 const isFromRetiredBucket = url => typeof url === "string" && RETIRED_STORAGE_HOSTS.some(h => url.includes(`/b/${h}/o/`));
 let cloudUser = null, appReady = false, currentScope = "local", authResolvedOnce = false, welcomeShown = false;
 let fbAuth = null, fbDb = null, fbStorage = null;
-/* Checked once, synchronously, before Firebase has had a chance to resolve the previous session --
-   if too much background time passed since the app was last active, the sign-in restored a moment
-   later gets immediately reversed (see onAuthStateChanged below) instead of ever reaching the UI. */
-let pendingInactivitySignOut = markActiveAndCheckTimeout();
+// pendingInactivitySignOut is computed up top (see its definition for why); consumed in onAuthStateChanged below.
 let forceWelcomeNext = false;
 if (cloudEnabled) {
   firebase.initializeApp(firebaseConfig);
@@ -1752,6 +1763,9 @@ if (cloudEnabled) {
     if (appReady && user) cloudPullAll(true);
     refreshSettingsIfOpen();
     if (!authResolvedOnce) { authResolvedOnce = true; if (user) { settings.onboarded = true; saveSettings(); } }
+    // The startup hold (see pendingInactivitySignOut above) is resolved now -- hide #welcome, unless
+    // we're about to force it open right below, which would just flash it hidden then shown again.
+    if (!forceWelcomeNext) hideWelcomeIfOnboarded();
     maybeShowWelcome(forceWelcomeNext);
     forceWelcomeNext = false;
   });
@@ -2181,6 +2195,9 @@ addPasswordToggles(document.body);
   render();
   if (!store.db) toast("Storage is unavailable, so items won’t be kept after closing.");
   appReady = true;
+  // Without cloud sync there's no onAuthStateChanged to resolve the startup hold above -- nothing
+  // can ever force a sign-out, so it's always safe to hide #welcome here if it's still showing.
+  if (!cloudEnabled) hideWelcomeIfOnboarded();
   if (cloudUser) cloudPullAll(true);
   maybeShowWelcome();
 })();
