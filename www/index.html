@@ -1597,6 +1597,7 @@ function openBulkUpdate() {
   const seriesList = [...new Set(state.items.map(i => i.series).filter(Boolean))].sort();
   const brands = [...new Set(state.items.map(i => i.brand).filter(Boolean))].sort();
   const scales = [...new Set(state.items.map(i => i.scale).filter(Boolean))].sort();
+  const colors = [...new Set(state.items.map(i => i.color).filter(Boolean))].sort();
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">Update ${n} ${n === 1 ? "item" : "items"}</h2>
     <p class="hint bu-intro">Leave a field blank (or on "No change") to keep each item's own value -- only fields you set here get applied to every selected item.</p>
@@ -1616,8 +1617,20 @@ function openBulkUpdate() {
         <input id="bu-scale" placeholder="No change" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list">
         <ul class="ac-list" id="buScaleSuggest" hidden></ul></div>
     </div>
-    <div class="field"><label for="bu-pri">Priority</label>
-      <button type="button" class="select-btn" id="bu-pri" value=""><span>No change</span>${CHEVRON_SVG}</button></div>
+    <div class="row">
+      <div class="field"><label for="bu-color">Color</label>
+        <input id="bu-color" placeholder="No change" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list">
+        <ul class="ac-list" id="buColorSuggest" hidden></ul></div>
+      <div class="field"><label for="bu-rarity">Rarity</label>
+        <button type="button" class="select-btn" id="bu-rarity" value=""><span>No change</span>${CHEVRON_SVG}</button></div>
+    </div>
+    <div class="row">
+      <div class="field"><label for="bu-cond">Condition</label>
+        <button type="button" class="select-btn" id="bu-cond" value=""><span>No change</span>${CHEVRON_SVG}</button></div>
+      <div class="field"><label for="bu-pri">Priority</label>
+        <button type="button" class="select-btn" id="bu-pri" value=""><span>No change</span>${CHEVRON_SVG}</button></div>
+    </div>
+    <div class="field"><label>Rating</label>${starsHtml("bu-rating", 0)}</div>
     <div class="actions">
       <button class="btn primary" id="bulkSaveBtn">Update ${n} ${n === 1 ? "item" : "items"}</button>
       <button class="btn ghost" id="bulkCancelBtn">Cancel</button>
@@ -1626,6 +1639,16 @@ function openBulkUpdate() {
   wireSuggest("bu-series", "buSeriesSuggest", seriesList);
   wireSuggest("bu-brand", "buBrandSuggest", brands);
   wireSuggest("bu-scale", "buScaleSuggest", scales);
+  wireSuggest("bu-color", "buColorSuggest", colors);
+  wireStars("bu-rating");
+  const rarityBtn = $("#bu-rarity");
+  rarityBtn.addEventListener("click", () => openPicker("Rarity",
+    RARITIES.map(r => [r, r || "Not set", ICONS.rarity]),
+    rarityBtn.value, v => { rarityBtn.value = v; rarityBtn.querySelector("span").textContent = v || "No change"; }));
+  const condBtn = $("#bu-cond");
+  condBtn.addEventListener("click", () => openPicker("Condition",
+    CONDITIONS.map(c => [c, c || "Not set", CONDITION_ICONS[c]]),
+    condBtn.value, v => { condBtn.value = v; condBtn.querySelector("span").textContent = v || "No change"; }));
   const priBtn = $("#bu-pri");
   priBtn.addEventListener("click", () => openPicker("Priority",
     [["", "No change", ICONS.notSet], ...[3, 2, 1].map(p => [p, PRI[p], ICONS.priority])],
@@ -1638,7 +1661,11 @@ function openBulkUpdate() {
     const series = v("bu-series"); if (series) patch.series = series;
     const brand = v("bu-brand"); if (brand) patch.brand = brand;
     const scale = v("bu-scale"); if (scale) patch.scale = scale;
+    const color = v("bu-color"); if (color) patch.color = color;
+    const rarity = rarityBtn.value; if (rarity) patch.rarity = rarity;
+    const cond = condBtn.value; if (cond) patch.condition = cond;
     const pri = priBtn.value; if (pri) patch.priority = +pri;
+    const rating = +$("#bu-rating").dataset.value || 0; if (rating) patch.rating = rating;
     if (!Object.keys(patch).length) { toast("Set at least one field to update"); return; }
     $("#bulkSaveBtn").disabled = true;
     const touched = [];
