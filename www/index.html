@@ -626,8 +626,11 @@ const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed,
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.5.6";
+const APP_VERSION = "1.5.7";
 const WHATS_NEW = [
+  { version: "1.5.7", date: "17 Nov 2026", items: [
+    "Fixed your Name, Surname, Cellphone number and profile picture occasionally getting wiped out — a background sync could push this device's not-yet-loaded profile over your real one before it had finished loading it."
+  ] },
   { version: "1.5.6", date: "17 Nov 2026", items: [
     "Fixed Adding using URL from Amazon not filling in a price. If the item is on sale, Price paid now fills with the sale price and Value with the full price."
   ] },
@@ -2009,6 +2012,11 @@ const cloudEnabled = firebaseConfig.apiKey !== "PASTE_ME";
 const RETIRED_STORAGE_HOSTS = ["micollects.firebasestorage.app"];
 const isFromRetiredBucket = url => typeof url === "string" && RETIRED_STORAGE_HOSTS.some(h => url.includes(`/b/${h}/o/`));
 let cloudUser = null, appReady = false, currentScope = "local", authResolvedOnce = false, welcomeShown = false;
+// Guards cloudPushSettings() below -- false until this account's own settings have been pulled down
+// (or confirmed to not exist yet) at least once this session, so a trivial change (sort order, layout,
+// adding a list value, etc.) ticked before that pull lands can't push this device's still-default
+// local settings and blow away a real profile (name/surname/phone/photo) already saved in the cloud.
+let cloudSettingsReady = false;
 let fbAuth = null, fbDb = null, fbStorage = null;
 // pendingInactivitySignOut is computed up top (see its definition for why); consumed in onAuthStateChanged below.
 let forceWelcomeNext = false;
@@ -2090,7 +2098,7 @@ async function cloudDeleteItem(id) {
 }
 
 async function cloudPushSettings() {
-  if (!cloudEnabled || !cloudUser) return;
+  if (!cloudEnabled || !cloudUser || !cloudSettingsReady) return;
   const { lastSynced, ...rest } = settings; // sync timestamp itself stays device-local, never synced
   try { await fbDb.collection("users").doc(cloudUser.uid).collection("meta").doc("settings").set(rest); } catch (e) {}
 }
@@ -2160,8 +2168,13 @@ async function cloudPullAll(silent) {
     }
     try {
       const metaDoc = await fbDb.collection("users").doc(syncUid).collection("meta").doc("settings").get();
-      if (metaDoc.exists) { Object.assign(settings, metaDoc.data()); saveSettings(); } else { await cloudPushSettings(); }
+      if (metaDoc.exists) { Object.assign(settings, metaDoc.data()); saveSettings(); }
     } catch (e) {}
+    if (!stillCurrent()) return;
+    // Only from here on is it safe to push this device's settings -- see cloudSettingsReady's own
+    // comment. If the doc above didn't exist yet, this is what creates it, same as before.
+    cloudSettingsReady = true;
+    await cloudPushSettings();
     if (!stillCurrent()) return;
     state.items = await store.all(syncUid);
     let repaired = 0;
@@ -2328,6 +2341,7 @@ if (cloudEnabled) {
     }
     const prevUid = cloudUser ? cloudUser.uid : null;
     cloudUser = user;
+    if (!user || user.uid !== prevUid) cloudSettingsReady = false;
     currentScope = user ? user.uid : "local";
     // A genuine account switch mid-session (not the initial cold-start session restore, which
     // authResolvedOnce distinguishes below) might be a different person than whoever last used this
