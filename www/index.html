@@ -149,8 +149,8 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 .cb{padding:10px 12px 12px;display:flex;flex-direction:column;gap:3px;flex:1}
 .nm{font-weight:650;font-size:15px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .mt{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ft{display:flex;justify-content:space-between;gap:6px;font-size:13px;margin-top:auto;padding-top:4px}
-.ft .val{font-weight:650}
+.ft{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 6px;font-size:13px;margin-top:auto;padding-top:4px}
+.ft .val{font-weight:650;margin-left:auto;white-space:nowrap}
 .pri{font-weight:600}
 .pri.p3{color:var(--danger)}.pri.p2{color:#D97706}.pri.p1{color:var(--muted)}
 .got{margin-top:8px;height:36px;border-radius:10px;border:0;color:var(--brass-ink);background:var(--brass);font-weight:650;font-size:14px;cursor:pointer}
@@ -626,8 +626,12 @@ const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed,
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.5.3";
+const APP_VERSION = "1.5.4";
 const WHATS_NEW = [
+  { version: "1.5.4", date: "17 Nov 2026", items: [
+    "Fixed large prices (5 digits or more) getting cut off at the edge of a grid tile.",
+    "Fixed the gallery photo picker only letting you choose one photo at a time when adding/editing an item — you can select several again."
+  ] },
   { version: "1.5.3", date: "17 Nov 2026", items: [
     "The “Saved” confirmation after exporting a PDF or backup now appears at the top of the screen instead of the bottom, so it's no longer hidden behind the share panel that opens right after.",
     "Exported PDFs/backups still save to your phone's Documents folder either way — sharing afterward is optional, same as before."
@@ -1679,7 +1683,19 @@ function openForm(item, convertTo) {
     const source = await pickPhotoSource();
     if (!source) return;
     const P = window.Capacitor && window.Capacitor.Plugins;
+    const remaining = MAXP - photos.length;
+    if (remaining <= 0) return;
     try {
+      // Gallery picks can be multiple -- getPhoto() only ever returns one, so use pickImages() there
+      // instead and let the user select several at once, same as the old native file picker did.
+      if (source === "PHOTOS" && P.Camera.pickImages) {
+        const { photos: picked } = await P.Camera.pickImages({ quality: 80, limit: remaining });
+        for (const p of (picked || []).slice(0, remaining)) {
+          try { const compressed = await compressSrc(p.webPath); if (photos.length < MAXP) photos.push(compressed); } catch (e) {}
+        }
+        paintPhotos();
+        return;
+      }
       const shot = await P.Camera.getPhoto({ quality: 80, resultType: "base64", source, saveToGallery: false });
       if (!shot || !shot.base64String) return;
       const compressed = await compressSrc(`data:image/${shot.format || "jpeg"};base64,${shot.base64String}`);
