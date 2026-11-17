@@ -168,8 +168,10 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 input.has-marquee::placeholder{color:transparent}
 .ph-text{position:absolute;left:12px;right:12px;top:0;bottom:0;display:flex;align-items:center;overflow:hidden;pointer-events:none;color:var(--muted);font-size:inherit}
 .ph-run{display:inline-block;white-space:nowrap;transform:translateX(0)}
-.ph-run.ph-scroll{animation:ph-scroll 3.6s ease-in-out infinite}
-@keyframes ph-scroll{0%,15%{transform:translateX(0)}85%,100%{transform:translateX(var(--ph-dist,0px))}}
+.ph-run.ph-scroll{animation:ph-scroll 21.6s ease-in-out infinite}
+/* The move itself is the first third (7.2s, half the old speed); the rest is a dead pause at the
+   reset position, twice as long as the move, before it scrolls again. */
+@keyframes ph-scroll{0%,5%{transform:translateX(0)}28.3333%,33.3333%{transform:translateX(var(--ph-dist,0px))}33.34%,100%{transform:translateX(0)}}
 @media (prefers-reduced-motion:reduce){.ph-run.ph-scroll{animation:none}}
 .clearable input,.clearable textarea{padding-right:34px}
 .clearable.has-pw input{padding-right:64px}
