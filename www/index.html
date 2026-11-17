@@ -1319,6 +1319,12 @@ function openForm(item, convertTo) {
         <input id="f-paid" type="number" inputmode="decimal" min="0" step="any" value="${val(it.paid)}"></div>
       <div class="field"><label for="f-value">Value each (${cur})</label>
         <input id="f-value" type="number" inputmode="decimal" min="0" step="any" value="${val(it.value)}"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label for="f-buildh">Hours spent building</label>
+        <input id="f-buildh" type="number" inputmode="numeric" min="0" step="1" placeholder="0" value="${val(it.buildHours)}"></div>
+      <div class="field"><label for="f-buildm">Minutes</label>
+        <input id="f-buildm" type="number" inputmode="numeric" min="0" max="59" step="1" placeholder="0" value="${val(it.buildMinutes)}"></div>
     </div>` : `
     <div class="row">
       <div class="field"><label for="f-target">Target price (${cur})</label>
@@ -1451,7 +1457,7 @@ async function save() {
     url: normUrl(v("f-url")), productUrl: normUrl(v("f-producturl")), notes: v("f-notes"), photos: photos.slice(), photo: photos[0] || null, updated: Date.now(),
     scope: it.scope || currentScope });
   if (it.list === "owned") {
-    Object.assign(it, { condition: v("f-cond"), qty: Math.max(1, parseInt(v("f-qty"), 10) || 1), paid: num(v("f-paid")), value: num(v("f-value")), purchaseDate: v("f-purchdate") || null });
+    Object.assign(it, { condition: v("f-cond"), qty: Math.max(1, parseInt(v("f-qty"), 10) || 1), paid: num(v("f-paid")), value: num(v("f-value")), purchaseDate: v("f-purchdate") || null, buildHours: num(v("f-buildh")), buildMinutes: num(v("f-buildm")) });
   } else {
     Object.assign(it, { target: num(v("f-target")), priority: +v("f-pri") || 2 });
   }
