@@ -626,8 +626,13 @@ const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed,
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.5.0";
 const WHATS_NEW = [
+  { version: "1.5.0", date: "17 Nov 2026", items: [
+    "Selecting items and tapping Share now also offers “Export as PDF” — a photo, name, brand/category and value for every selected item, available even when signed out.",
+    "PDF exports now actually save to your phone's Documents folder instead of only opening the share sheet — “share” is still offered too, but saving no longer depends on some app in that sheet happening to support it.",
+    "Fixed removing or adding a value in Settings > Lists or Fields scrolling you back to the top of a long list every time."
+  ] },
   { version: "1.4.0", date: "17 Nov 2026", items: [
     "Added custom fields (Settings > Fields) — your own text fields with your own title, shown on the item form for Collection, Wishlist, or both.",
     "Fixed a popup sometimes only closable with the back button — tapping outside it now always closes it, even when opened from inside another screen like Settings."
@@ -773,8 +778,9 @@ function render() {
   document.querySelectorAll("#layoutBar [data-layout]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.layout === state.layout)));
 
   if (state.selecting) for (const id of [...state.selected]) if (!tabItems.some(i => i.id === id)) state.selected.delete(id);
-  const canBulkShare = cloudEnabled && !!cloudUser;
-  $("#selectShareBtn").hidden = !canBulkShare;
+  // Exporting a PDF needs no cloud/sign-in, unlike the public-link option this button also offers --
+  // it's always available in select mode now, not just for signed-in cloud users.
+  $("#selectShareBtn").hidden = false;
   $("#layoutBar").hidden = state.selecting;
   $("#selectBar").hidden = !state.selecting;
 
@@ -2585,7 +2591,7 @@ function openSummary() {
    a textarea that only exists in the Settings sheet). */
 async function shareOrDownload(name, blob, mimeType, shareTitle) {
   const P = window.Capacitor && window.Capacitor.Plugins;
-  if (P && P.Filesystem && P.Share) {
+  if (P && P.Filesystem) {
     try {
       const base64 = await new Promise((res, rej) => {
         const r = new FileReader();
@@ -2593,8 +2599,14 @@ async function shareOrDownload(name, blob, mimeType, shareTitle) {
         r.onerror = rej;
         r.readAsDataURL(blob);
       });
-      const r = await P.Filesystem.writeFile({ path: name, data: base64, directory: "CACHE" });
-      await P.Share.share({ title: shareTitle, url: r.uri, dialogTitle: `Save ${name}` });
+      // Documents, not Cache -- writing to Cache and only ever opening the share sheet meant "saving"
+      // depended on some app in that sheet happening to offer a save-to-storage action, which isn't
+      // guaranteed (reported as "can only share it over social media" on some phones). Documents is
+      // kept by the OS and browsable from the phone's own Files app, so the file is reliably saved
+      // regardless of what, if anything, is done with the share sheet afterward.
+      const r = await P.Filesystem.writeFile({ path: name, data: base64, directory: "DOCUMENTS" });
+      toast(`Saved ${name} to Documents`);
+      if (P.Share) { try { await P.Share.share({ title: shareTitle, url: r.uri, dialogTitle: `Share ${name}` }); } catch (e) {} }
       return;
     } catch (e) { if (/cancel/i.test(String(e && e.message))) return; }
   }
@@ -2624,28 +2636,33 @@ async function exportSummaryCsv({ n, pieces, totalPaid, total, avgPaid, avg, byV
   await shareOrDownload(name, new Blob([csv], { type: "text/csv" }), "text/csv", "Collection summary (CSV)");
 }
 
-/* Drawn with jsPDF's own vector primitives (rounded rects, lines, text) rather than rendering real
-   HTML -- html2canvas-based rendering is a much heavier, flakier dependency inside an Android WebView.
+/* Shared across every jsPDF-based export (Collection Summary, and the whole-collection/wishlist
+   export below) -- drawn with jsPDF's own vector primitives rather than rendering real HTML
+   (html2canvas-based rendering is a much heavier, flakier dependency inside an Android WebView).
    Colors are the light-theme palette from :root, since a PDF page is always light regardless of the
    app's current theme. */
+const PDF_INK = [15, 23, 42], PDF_BRASS = [37, 99, 235], PDF_MUTED = [100, 116, 139], PDF_SUNK = [241, 244, 248], PDF_LINE = [226, 232, 240];
+/* Draws the "mi"+"Collects" wordmark top-left, the given title beneath it, and today's date top-right
+   -- returns the y cursor to continue drawing from. */
+function drawPdfHeader(doc, marginX, pageW, title) {
+  doc.setFont("helvetica", "bold"); doc.setFontSize(20);
+  doc.setTextColor(...PDF_INK); doc.text("mi", marginX, 20);
+  doc.setTextColor(...PDF_BRASS); doc.text("Collects", marginX + doc.getTextWidth("mi"), 20);
+  let y = 20 + 18;
+  doc.setTextColor(...PDF_INK); doc.setFontSize(16); doc.setFont("helvetica", "bold");
+  doc.text(title, marginX, y);
+  doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_MUTED);
+  doc.text(new Date().toLocaleDateString(), pageW - marginX, y, { align: "right" });
+  return y + 10;
+}
 function exportSummaryPdf({ n, pieces, totalPaid, total, avgPaid, avg, cats, brands, byValue }) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const marginX = 15, pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
   const contentW = pageW - marginX * 2;
-  const INK = [15, 23, 42], BRASS = [37, 99, 235], MUTED = [100, 116, 139], SUNK = [241, 244, 248], LINE = [226, 232, 240];
-  let y = 20;
+  const INK = PDF_INK, BRASS = PDF_BRASS, MUTED = PDF_MUTED, SUNK = PDF_SUNK, LINE = PDF_LINE;
+  let y = drawPdfHeader(doc, marginX, pageW, "Collection Summary");
   const ensureSpace = h => { if (y + h > pageH - 15) { doc.addPage(); y = 20; } };
-
-  doc.setFont("helvetica", "bold"); doc.setFontSize(20);
-  doc.setTextColor(...INK); doc.text("mi", marginX, y);
-  doc.setTextColor(...BRASS); doc.text("Collects", marginX + doc.getTextWidth("mi"), y);
-  y += 18;
-  doc.setTextColor(...INK); doc.setFontSize(16); doc.setFont("helvetica", "bold");
-  doc.text("Collection Summary", marginX, y);
-  doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(...MUTED);
-  doc.text(new Date().toLocaleDateString(), pageW - marginX, y, { align: "right" });
-  y += 10;
 
   const tiles = [
     [String(n), n === 1 ? "item" : "items"], [String(pieces), pieces === 1 ? "piece" : "pieces"],
@@ -2726,6 +2743,50 @@ function exportSummaryPdf({ n, pieces, totalPaid, total, avgPaid, avg, cats, bra
   shareOrDownload(name, doc.output("blob"), "application/pdf", "Collection summary (PDF)");
 }
 
+/* Every item gets its own row with its main photo -- it.photos[0] is already a local base64
+   data:image/jpeg URL (every stored photo goes through compressSrc/compress, which always outputs
+   JPEG), so this needs no network fetch, unlike the Summary export's data. */
+async function exportItemsPdf(items) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const marginX = 15, pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
+  const contentW = pageW - marginX * 2;
+  const owned = items[0] && items[0].list === "owned";
+  let y = drawPdfHeader(doc, marginX, pageW, owned ? "My Collection" : "My Wishlist");
+
+  const fit = (text, maxW, size) => {
+    doc.setFontSize(size);
+    let t = text;
+    while (doc.getTextWidth(t) > maxW && t.length > 1) t = t.slice(0, -1);
+    return t === text ? t : t.slice(0, -1) + "…";
+  };
+  const imgSize = 26, rowH = 30, priceColW = 32;
+  const textX = marginX + imgSize + 6;
+  const maxTextW = contentW - imgSize - 6 - priceColW - 3;
+  const sorted = items.slice().sort(owned
+    ? (a, b) => (a.name || "").localeCompare(b.name || "")
+    : (a, b) => (b.priority || 2) - (a.priority || 2) || (a.name || "").localeCompare(b.name || ""));
+
+  sorted.forEach(it => {
+    if (y + rowH > pageH - 15) { doc.addPage(); y = 20; }
+    doc.setFillColor(...PDF_SUNK); doc.roundedRect(marginX, y, contentW, rowH, 3, 3, "F");
+    const photo = it.photos && it.photos[0];
+    if (photo) { try { doc.addImage(photo, "JPEG", marginX + 2, y + 2, imgSize - 4, imgSize - 4, undefined, "FAST"); } catch (e) {} }
+    doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_INK);
+    doc.text(fit(it.name || "Untitled", maxTextW, 11), textX, y + 11);
+    doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_MUTED);
+    const sub = [it.brand, it.category].filter(Boolean).join(" · ");
+    if (sub) doc.text(fit(sub, maxTextW, 9), textX, y + 18);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(...PDF_INK);
+    doc.text(money(price(it)), pageW - marginX - 3, y + 11, { align: "right" });
+    y += rowH + 4;
+  });
+
+  const kind = owned ? "collection" : "wishlist";
+  const name = `micollects-${kind}-${new Date().toISOString().slice(0, 10)}.pdf`;
+  await shareOrDownload(name, doc.output("blob"), "application/pdf", `My miCollects ${kind}`);
+}
+
 function openWhatsNew() {
   settings.whatsNewSeenVersion = WHATS_NEW[0].version; saveSettings(); cloudPushSettings();
   $("#whatsNewBtn").classList.remove("has-news");
@@ -2741,6 +2802,16 @@ function openWhatsNew() {
   showSheet();
 }
 
+/* openSettings() re-renders the whole sheet (via showSheet()), which always resets scroll to the
+   top -- fine the first time Settings opens, but adding/removing a Lists or Fields value re-renders
+   the same way, which was throwing the user back to the top of a long list after every single
+   delete. This just puts the scroll position back where it was, synchronously, so there's no
+   visible jump. */
+function reopenSettingsKeepingScroll() {
+  const y = $("#sheet").scrollTop;
+  openSettings();
+  $("#sheet").scrollTop = y;
+}
 function openSettings() {
   const tabs = [["general", "General"], ["lists", "Lists"], ["fields", "Fields"], ["api", "API"]];
   if (!tabs.some(([k]) => k === settingsTab)) settingsTab = "general";
@@ -2792,7 +2863,7 @@ function openSettings() {
       if (xBtn) {
         const { field, val } = xBtn.dataset;
         settings.predefinedValues[field] = predefinedList(field).filter(v => v !== val);
-        saveSettings(); cloudPushSettings(); openSettings();
+        saveSettings(); cloudPushSettings(); reopenSettingsKeepingScroll();
         return;
       }
       const addBtn = e.target.closest("[data-add]");
@@ -2801,7 +2872,7 @@ function openSettings() {
         if (!v) return;
         const vals = predefinedList(key);
         if (!vals.some(x => norm(x) === norm(v))) { vals.push(v); vals.sort((a, b) => a.localeCompare(b)); }
-        saveSettings(); cloudPushSettings(); openSettings();
+        saveSettings(); cloudPushSettings(); reopenSettingsKeepingScroll();
       }
     });
     PREDEFINED_FIELDS.forEach(([key]) => $("#lv-add-" + key).addEventListener("keydown", e => {
@@ -2816,13 +2887,13 @@ function openSettings() {
       const label = $("#cf-new-label").value.trim(); if (!label) return;
       settings.customFields = settings.customFields || [];
       settings.customFields.push({ id: uid(), label, scope: scopeBtn.value || "both" });
-      saveSettings(); cloudPushSettings(); openSettings();
+      saveSettings(); cloudPushSettings(); reopenSettingsKeepingScroll();
     });
     $("#cf-new-label").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#cfAddBtn").click(); } });
     $("#settingsTabBody").addEventListener("click", e => {
       const x = e.target.closest(".cf-x"); if (!x) return;
       settings.customFields = (settings.customFields || []).filter(f => f.id !== x.dataset.del);
-      saveSettings(); cloudPushSettings(); openSettings();
+      saveSettings(); cloudPushSettings(); reopenSettingsKeepingScroll();
     });
   }
   $("#sDone").addEventListener("click", closeSheet);
@@ -2945,14 +3016,21 @@ $("#selectAllBtn").addEventListener("click", () => {
   state.selected = allSelected ? new Set() : new Set(visIds);
   render();
 });
-$("#selectShareBtn").addEventListener("click", async () => {
+$("#selectShareBtn").addEventListener("click", () => {
   if (!state.selected.size) { toast("Select at least one item"); return; }
-  const btn = $("#selectShareBtn"); btn.disabled = true;
-  try {
-    const items = state.items.filter(i => state.selected.has(i.id));
-    await shareItemsNow(items);
-    exitSelectModeAndPop();
-  } catch (e) { toast("Couldn’t share: " + authErrorMsg(e)); btn.disabled = false; }
+  const items = state.items.filter(i => state.selected.has(i.id));
+  const canLinkShare = cloudEnabled && !!cloudUser;
+  const options = [["pdf", "Export as PDF"]];
+  if (canLinkShare) options.unshift(["link", "Share link"]);
+  openPicker("Share", options, null, async v => {
+    const btn = $("#selectShareBtn"); btn.disabled = true;
+    try {
+      if (v === "pdf") await exportItemsPdf(items);
+      else await shareItemsNow(items);
+      exitSelectModeAndPop();
+    } catch (e) { toast("Couldn’t share: " + authErrorMsg(e)); }
+    finally { btn.disabled = false; }
+  });
 });
 $("#selectBulkBtn").addEventListener("click", () => {
   if (!state.selected.size) { toast("Select at least one item"); return; }
