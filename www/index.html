@@ -574,8 +574,13 @@ const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed,
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.0.1";
+const APP_VERSION = "1.0.2";
 const WHATS_NEW = [
+  { version: "1.0.2", date: "17 Nov 2026", items: [
+    "Bulk update now only shows the fields that apply to the tab you're updating from — price and purchase date for Collection, target price and priority for Wishlist.",
+    "Fixed pull-to-sync not responding to a real finger swipe on some phones.",
+    "The “What’s New” unread dot is now tracked per account, not per device, so signing into a different account shows it correctly again."
+  ] },
   { version: "1.0.1", date: "17 Nov 2026", items: [
     "Added this “What’s New” page — tap the lightbulb in the header any time to see what’s changed."
   ] },
@@ -1661,6 +1666,8 @@ function openBulkUpdate() {
   const ids = [...state.selected];
   const n = ids.length;
   if (!n) return;
+  const owned = state.tab === "owned";
+  const cur = esc(settings.currency);
   const cats = [...new Set(state.items.map(i => i.category).filter(Boolean))].sort();
   const seriesList = [...new Set(state.items.map(i => i.series).filter(Boolean))].sort();
   const brands = [...new Set(state.items.map(i => i.brand).filter(Boolean))].sort();
@@ -1695,10 +1702,23 @@ function openBulkUpdate() {
     <div class="row">
       <div class="field"><label for="bu-cond">Condition</label>
         <button type="button" class="select-btn" id="bu-cond" value=""><span>No change</span>${CHEVRON_SVG}</button></div>
+      <div class="field"><label>Rating</label>${starsHtml("bu-rating", 0)}</div>
+    </div>
+    ${owned ? `
+    <div class="row">
+      <div class="field"><label for="bu-purchdate">Purchase date</label>
+        <input id="bu-purchdate" type="date"></div>
+      <div class="field"><label for="bu-paid">Price paid (${cur})</label>
+        <input id="bu-paid" type="number" inputmode="decimal" min="0" step="any" placeholder="No change"></div>
+    </div>
+    <div class="field"><label for="bu-value">Value each (${cur})</label>
+      <input id="bu-value" type="number" inputmode="decimal" min="0" step="any" placeholder="No change"></div>` : `
+    <div class="row">
+      <div class="field"><label for="bu-target">Target price (${cur})</label>
+        <input id="bu-target" type="number" inputmode="decimal" min="0" step="any" placeholder="No change"></div>
       <div class="field"><label for="bu-pri">Priority</label>
         <button type="button" class="select-btn" id="bu-pri" value=""><span>No change</span>${CHEVRON_SVG}</button></div>
-    </div>
-    <div class="field"><label>Rating</label>${starsHtml("bu-rating", 0)}</div>
+    </div>`}
     <div class="actions">
       <button class="btn primary" id="bulkSaveBtn">Update ${n} ${n === 1 ? "item" : "items"}</button>
       <button class="btn ghost" id="bulkCancelBtn">Cancel</button>
@@ -1718,12 +1738,13 @@ function openBulkUpdate() {
     CONDITIONS.map(c => [c, c || "Not set", CONDITION_ICONS[c]]),
     condBtn.value, v => { condBtn.value = v; condBtn.querySelector("span").textContent = v || "No change"; }));
   const priBtn = $("#bu-pri");
-  priBtn.addEventListener("click", () => openPicker("Priority",
+  if (priBtn) priBtn.addEventListener("click", () => openPicker("Priority",
     [["", "No change", ICONS.notSet], ...[3, 2, 1].map(p => [p, PRI[p], ICONS.priority])],
     priBtn.value, v => { priBtn.value = v; priBtn.querySelector("span").textContent = v ? PRI[v] : "No change"; }));
   $("#bulkCancelBtn").addEventListener("click", closeSheet);
   $("#bulkSaveBtn").addEventListener("click", async () => {
     const v = id => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
+    const num = x => x === "" ? null : Math.max(0, Number(x));
     const patch = {};
     const cat = v("bu-cat"); if (cat) patch.category = cat;
     const series = v("bu-series"); if (series) patch.series = series;
@@ -1732,8 +1753,15 @@ function openBulkUpdate() {
     const color = v("bu-color"); if (color) patch.color = color;
     const rarity = rarityBtn.value; if (rarity) patch.rarity = rarity;
     const cond = condBtn.value; if (cond) patch.condition = cond;
-    const pri = priBtn.value; if (pri) patch.priority = +pri;
     const rating = +$("#bu-rating").dataset.value || 0; if (rating) patch.rating = rating;
+    if (owned) {
+      const purchdate = v("bu-purchdate"); if (purchdate) patch.purchaseDate = purchdate;
+      const paid = num(v("bu-paid")); if (paid != null) patch.paid = paid;
+      const value = num(v("bu-value")); if (value != null) patch.value = value;
+    } else {
+      const target = num(v("bu-target")); if (target != null) patch.target = target;
+      const pri = priBtn.value; if (pri) patch.priority = +pri;
+    }
     if (!Object.keys(patch).length) { toast("Set at least one field to update"); return; }
     $("#bulkSaveBtn").disabled = true;
     const touched = [];
@@ -2095,8 +2123,14 @@ if (cloudEnabled) {
       try { await fbAuth.signOut(); } catch (e) {}
       return; // the resulting null-user call below finishes the job
     }
+    const prevUid = cloudUser ? cloudUser.uid : null;
     cloudUser = user;
     currentScope = user ? user.uid : "local";
+    // A genuine account switch mid-session (not the initial cold-start session restore, which
+    // authResolvedOnce distinguishes below) might be a different person than whoever last used this
+    // device -- the "What's New" seen-marker is per-account, so don't let one account's dismissal
+    // carry over to another; cloudPullAll below restores this account's own real value, if any.
+    if (authResolvedOnce && user && user.uid !== prevUid) settings.whatsNewSeenVersion = "";
     if (appReady) { state.items = await store.all(currentScope); render(); }
     if (appReady && user) cloudPullAll(true);
     refreshSettingsIfOpen();
@@ -2284,7 +2318,7 @@ function openAccount() {
           await fn(email, pass);
           if (requirePolicy) {
             settings.firstName = properCase(firstName); settings.lastName = properCase(lastName);
-            saveSettings(); cloudPushSettings();
+            settings.whatsNewSeenVersion = ""; saveSettings(); cloudPushSettings();
           }
           toast(okMsg); authMode = null;
           state.tab = "owned"; closeSheet(); render();
@@ -2309,7 +2343,7 @@ function openAccount() {
 }
 
 function openWhatsNew() {
-  settings.whatsNewSeenVersion = WHATS_NEW[0].version; saveSettings();
+  settings.whatsNewSeenVersion = WHATS_NEW[0].version; saveSettings(); cloudPushSettings();
   $("#whatsNewBtn").classList.remove("has-news");
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">What's New</h2>
@@ -2536,9 +2570,12 @@ $("#headerAvatar").addEventListener("click", () => {
 /* Anywhere on the home screen (either tab), dragging down while already scrolled to the top pulls
    in a "Pull to sync"/"Release to sync" indicator and triggers a sync on release -- cloudPullAll()
    already shows its own "Syncing…"/"Already syncing…"/completion toasts, so this only needs to
-   detect the gesture and show the indicator while it's in progress. Purely additive (no
-   preventDefault/stopPropagation), so it never interferes with taps or the grid's own long-press-
-   to-select tracking. */
+   detect the gesture and show the indicator while it's in progress. Additive (no
+   preventDefault/stopPropagation) for taps and the grid's own long-press-to-select tracking --
+   except the touchmove listener below, which has to preventDefault once a pull is actually under
+   way, or Chromium/WebView takes the drag over for its own native scroll/overscroll handling
+   (cancelling our pointer tracking) before PTR_THRESHOLD is ever reached; overscroll-behavior
+   alone only suppresses the visual bounce, not that gesture takeover. */
 let ptrStartY = null, ptrActive = false;
 const PTR_THRESHOLD = 70;
 const ptrAtTop = () => (document.scrollingElement || document.documentElement).scrollTop <= 0;
@@ -2579,6 +2616,7 @@ document.addEventListener("pointerup", () => {
   cloudPullAll();
 });
 document.addEventListener("pointercancel", () => { ptrReset(); ptrStartY = null; ptrActive = false; });
+document.addEventListener("touchmove", e => { if (ptrActive) e.preventDefault(); }, { passive: false });
 
 /* ---------- Welcome (first launch) ---------- */
 function showWelcome() {
@@ -2634,7 +2672,7 @@ function openWelcomeForm(mode) {
       await (mode === "signin" ? cloudSignIn(email, pass) : cloudSignUp(email, pass));
       if (mode === "signup") {
         settings.firstName = properCase(firstName); settings.lastName = properCase(lastName);
-        saveSettings(); cloudPushSettings();
+        settings.whatsNewSeenVersion = ""; saveSettings(); cloudPushSettings();
       }
       finishWelcome();
     } catch (e) { hint.textContent = authErrorMsg(e); }
