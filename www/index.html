@@ -626,8 +626,12 @@ const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed,
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.5.1";
 const WHATS_NEW = [
+  { version: "1.5.1", date: "17 Nov 2026", items: [
+    "The “Export as PDF” option now also shows a total for everything exported, plus Series, Size, Condition, Rarity, Qty and Purchase Date on each item (only the ones that apply), in a cleaner two-column layout instead of one long line.",
+    "Each item's photo in that PDF is now centered in its frame with rounded corners, matching the frame around it."
+  ] },
   { version: "1.5.0", date: "17 Nov 2026", items: [
     "Selecting items and tapping Share now also offers “Export as PDF” — a photo, name, brand/category and value for every selected item, available even when signed out.",
     "PDF exports now actually save to your phone's Documents folder instead of only opening the share sheet — “share” is still offered too, but saving no longer depends on some app in that sheet happening to support it.",
@@ -2754,31 +2758,77 @@ async function exportItemsPdf(items) {
   const owned = items[0] && items[0].list === "owned";
   let y = drawPdfHeader(doc, marginX, pageW, owned ? "My Collection" : "My Wishlist");
 
+  const total = items.reduce((s, it) => s + price(it), 0);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(...PDF_INK);
+  doc.text(`${items.length} ${items.length === 1 ? "item" : "items"}`, marginX, y);
+  doc.text(`Total: ${money(total)}`, pageW - marginX, y, { align: "right" });
+  y += 10;
+
   const fit = (text, maxW, size) => {
     doc.setFontSize(size);
     let t = text;
     while (doc.getTextWidth(t) > maxW && t.length > 1) t = t.slice(0, -1);
     return t === text ? t : t.slice(0, -1) + "…";
   };
-  const imgSize = 26, rowH = 30, priceColW = 32;
+  const imgSize = 26, priceColW = 32;
   const textX = marginX + imgSize + 6;
   const maxTextW = contentW - imgSize - 6 - priceColW - 3;
   const sorted = items.slice().sort(owned
     ? (a, b) => (a.name || "").localeCompare(b.name || "")
     : (a, b) => (b.priority || 2) - (a.priority || 2) || (a.name || "").localeCompare(b.name || ""));
 
+  // Two label:value columns rather than one long wrapped line of "Label: value   Label: value..." --
+  // that read as one crammed, hard-to-scan paragraph once more than two or three fields had values.
+  const colGap = 6, colW = (maxTextW - colGap) / 2, col2X = textX + colW + colGap, metaLineH = 5;
   sorted.forEach(it => {
+    const sub = [it.brand, it.category].filter(Boolean).join(" · ");
+    // Descriptive attributes on the left, provenance/status on the right; qty/purchase date only
+    // mean anything for owned items, not wishlist ones.
+    const colA = [], colB = [];
+    if (it.series) colA.push(["Series", it.series]);
+    if (it.scale) colA.push(["Size", it.scale]);
+    if (owned) colA.push(["Qty", String(+it.qty || 1)]);
+    if (it.condition) colB.push(["Condition", it.condition]);
+    if (it.rarity) colB.push(["Rarity", it.rarity]);
+    if (owned && it.purchaseDate) colB.push(["Purchased", it.purchaseDate]);
+    const metaRows = Math.max(colA.length, colB.length);
+    const rowH = Math.max(imgSize + 4, 11 + (sub ? 6 : 0) + (metaRows ? 3 + metaRows * metaLineH : 0) + 5);
+
     if (y + rowH > pageH - 15) { doc.addPage(); y = 20; }
     doc.setFillColor(...PDF_SUNK); doc.roundedRect(marginX, y, contentW, rowH, 3, 3, "F");
     const photo = it.photos && it.photos[0];
-    if (photo) { try { doc.addImage(photo, "JPEG", marginX + 2, y + 2, imgSize - 4, imgSize - 4, undefined, "FAST"); } catch (e) {} }
-    doc.setFont("helvetica", "bold"); doc.setTextColor(...PDF_INK);
-    doc.text(fit(it.name || "Untitled", maxTextW, 11), textX, y + 11);
-    doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_MUTED);
-    const sub = [it.brand, it.category].filter(Boolean).join(" · ");
-    if (sub) doc.text(fit(sub, maxTextW, 9), textX, y + 18);
+    // Centered vertically within the row, not pinned to its top -- rows are taller than the image
+    // itself whenever an item has several metadata lines, which otherwise left it looking stuck in
+    // the top-left corner of its box instead of sitting in the middle of it. Clipped to a rounded
+    // rect so its corners match the row's own rounded-corner background instead of being square.
+    if (photo) {
+      try {
+        const iw = imgSize - 4, ix = marginX + 2, iy = y + (rowH - iw) / 2;
+        doc.saveGraphicsState();
+        doc.roundedRect(ix, iy, iw, iw, 2.5, 2.5, null);
+        doc.clip();
+        doc.discardPath();
+        doc.addImage(photo, "JPEG", ix, iy, iw, iw, undefined, "FAST");
+        doc.restoreGraphicsState();
+      } catch (e) {}
+    }
+
+    let ty = y + 9;
     doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(...PDF_INK);
-    doc.text(money(price(it)), pageW - marginX - 3, y + 11, { align: "right" });
+    doc.text(fit(it.name || "Untitled", maxTextW, 11), textX, ty);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11);
+    doc.text(money(price(it)), pageW - marginX - 3, ty, { align: "right" });
+
+    if (sub) { ty += 6; doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_MUTED); doc.text(fit(sub, maxTextW, 9), textX, ty); }
+    if (metaRows) {
+      ty += 3;
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...PDF_MUTED);
+      for (let i = 0; i < metaRows; i++) {
+        const rowY = ty + metaLineH + i * metaLineH;
+        if (colA[i]) doc.text(fit(`${colA[i][0]}: ${colA[i][1]}`, colW, 8), textX, rowY);
+        if (colB[i]) doc.text(fit(`${colB[i][0]}: ${colB[i][1]}`, colW, 8), col2X, rowY);
+      }
+    }
     y += rowH + 4;
   });
 
