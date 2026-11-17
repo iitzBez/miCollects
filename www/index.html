@@ -32,9 +32,9 @@
   --brass:#3B82F6;--brass-ink:#FFFFFF;--wish:#60A5FA;--danger:#F87171;--star:#FBBF24;--scrim:rgba(0,0,0,.6);
   color-scheme:dark;
 }
-html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px);overscroll-behavior-y:contain}
 *,*::before,*::after{box-sizing:inherit}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--body);-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--body);-webkit-tap-highlight-color:transparent;overscroll-behavior-y:contain}
 button,input,select,textarea{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--brass);outline-offset:2px}
 img{max-width:100%}
@@ -67,6 +67,7 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .wn-version .wn-date{font:600 12px/1 var(--body);color:var(--muted);white-space:nowrap}
 .wn-items{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
 .wn-items li{font-size:14px;line-height:1.4;color:var(--ink)}
+.settings-version{text-align:center;margin-top:18px}
 .icon-btn svg{width:20px;height:20px}
 
 /* Toolbar */
@@ -2191,8 +2192,7 @@ function generalTabHtml() {
     <div class="field"><label for="s-theme">Theme</label>
       <button type="button" class="select-btn" id="s-theme"><span>${esc((THEME_OPTIONS.find(t => t[0] === settings.theme) || THEME_OPTIONS[0])[1])}</span>${CHEVRON_SVG}</button></div>
     <p class="hint">"System" follows your phone's own light/dark setting.</p>
-    <div class="more"><button class="btn danger" id="wipeBtn">Delete everything</button></div>
-    <p class="hint" style="text-align:center;margin-top:18px">miCollects v${esc(APP_VERSION)}</p>`;
+    <div class="more"><button class="btn danger" id="wipeBtn">Delete everything</button></div>`;
 }
 
 function apiTabHtml() {
@@ -2215,7 +2215,8 @@ function openAccount() {
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">Account</h2>
     <div id="accountBody">${body}</div>
-    <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>`;
+    <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>
+    <p class="hint settings-version">miCollects v${esc(APP_VERSION)}</p>`;
 
   if (cloudUser) {
     $("#signOutBtn").addEventListener("click", () => cloudSignOut());
@@ -2332,7 +2333,8 @@ function openSettings() {
       ${tabs.map(([k, l]) => `<button type="button" class="stab" data-stab="${k}" role="tab" aria-selected="${settingsTab === k}">${esc(l)}</button>`).join("")}
     </div>
     <div id="settingsTabBody">${tabBody}</div>
-    <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>`;
+    <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>
+    <p class="hint settings-version">miCollects v${esc(APP_VERSION)}</p>`;
 
   $("#settingsTabs").addEventListener("click", e => {
     const b = e.target.closest("[data-stab]"); if (!b || b.dataset.stab === settingsTab) return;
