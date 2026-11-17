@@ -57,10 +57,10 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .header-avatar{width:clamp(34px,10.5vw,44px);height:clamp(34px,10.5vw,44px);padding:0;border-radius:50%;border:1px solid var(--line);background:var(--sunk);display:grid;place-items:center;overflow:hidden;flex:none;cursor:pointer;font:700 clamp(12px,3.8vw,16px)/1 var(--display);color:var(--muted)}
 .header-avatar img{width:100%;height:100%;object-fit:cover}
 .header-avatar svg{width:50%;height:50%}
-.ptr-indicator{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 0;background:var(--surface);border-bottom:1px solid var(--line);font-size:13px;font-weight:650;color:var(--muted);z-index:25;opacity:0;transform:translateY(-12px);pointer-events:none}
-.ptr-indicator.ptr-ready{color:var(--brass)}
-.ptr-spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--brass);flex:none}
-@keyframes ptr-spin{to{transform:rotate(360deg)}}
+/* A small floating badge that moves and rotates with the drag, not a bar -- the page underneath never
+   shifts or gets a visible strip pinned over it, just this one icon riding along with the finger. */
+.ptr-indicator{position:fixed;top:14px;left:50%;width:40px;height:40px;padding:9px;box-sizing:border-box;border-radius:50%;background:var(--surface);border:1px solid var(--line);box-shadow:0 4px 14px rgba(15,23,42,.18);color:var(--muted);z-index:25;opacity:0;pointer-events:none;transform:translateX(-50%) translateY(-40px)}
+.ptr-indicator.ptr-ready{color:var(--brass);border-color:var(--brass)}
 @keyframes login-dot-pop{0%,100%{opacity:.15;transform:scale(.5)}40%,60%{opacity:1;transform:scale(1)}}
 .icon-anim-login .login-dot{animation:login-dot-pop 1.6s ease-in-out infinite;transform-origin:center;transform-box:fill-box}
 .icon-anim-login .login-dot-2{animation-delay:.15s}
@@ -320,10 +320,7 @@ input.has-marquee::placeholder{color:transparent}
 </head>
 <body>
 
-<div class="ptr-indicator" id="ptrIndicator" aria-hidden="true" hidden>
-  <div class="ptr-spin"></div>
-  <span id="ptrLabel">Pull to sync</span>
-</div>
+<svg class="ptr-indicator" id="ptrIndicator" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
 
 <div class="welcome" id="welcome">
   <p class="welcome-logo">mi<span>Collects</span></p>
@@ -618,8 +615,14 @@ const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed,
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.3.1";
 const WHATS_NEW = [
+  { version: "1.3.1", date: "17 Nov 2026", items: [
+    "Fixed Amazon links adding no photo — Amazon's pages don't expose one the normal way on any device.",
+    "Fixed Checkers links sometimes adding an extra, unrelated photo alongside the real product photos.",
+    "Photos from a pasted link now download all at once instead of one at a time, so it's faster and less likely to stall partway through.",
+    "Redesigned pull-to-sync as a small floating icon that moves with your finger, instead of a bar across the top — and fixed it sometimes getting stuck on screen after a few fast pulls in a row."
+  ] },
   { version: "1.3.0", date: "17 Nov 2026", items: [
     "Category, Series, Brand, Size and Color now use curated suggestion lists instead of every value ever typed — manage them from Settings > Lists or right from each field's dropdown (add/remove with the ×). A one-off value you type still saves fine on that item without cluttering future suggestions.",
     "Fixed a placeholder-text color mismatch and overlapping text after picking a suggested value.",
@@ -1271,9 +1274,30 @@ function extractProduct(html, pageUrl) {
     if (/^https?:/i.test(u) && !images.includes(u)) images.push(u);
   };
   addImg(product.image);
-  ["og:image", "og:image:secure_url", "og:image:url", "twitter:image"].forEach(k => metaAll(k).forEach(addImg));
   doc.querySelectorAll('[itemprop="image"]').forEach(el => addImg(el.getAttribute("content") || el.getAttribute("src") || el.getAttribute("href")));
   const lis = doc.querySelector('link[rel="image_src"]'); if (lis) addImg(lis.getAttribute("href"));
+  /* og:image/twitter:image only as a fallback, and only once nothing more specific has already been
+     found -- some storefronts (checkers.co.za) list the real per-product photo(s) via Product
+     JSON-LD's own `image`, THEN ALSO carry a second, generic og:image for their own generic site-wide
+     share card (not the product) as a page-level fallback. Appending it unconditionally after the
+     real photos meant it rode along into the item as an extra, wrong "product photo". */
+  if (!images.length) ["og:image", "og:image:secure_url", "og:image:url", "twitter:image"].forEach(k => metaAll(k).forEach(addImg));
+  /* Amazon has no og:image, itemprop=image, link[rel=image_src] or Product JSON-LD at all -- on any
+     User-Agent. The desktop template exposes the gallery via a data-a-dynamic-image JSON attribute
+     (a long-standing, documented Amazon convention); the mobile template used here instead buries just
+     the one main image inside a share-widget config attribute. Both are plain HTML attributes, so
+     DOMParser has already decoded their HTML-entity-escaped JSON by the time it's read here. */
+  const dyn = doc.querySelector("[data-a-dynamic-image]");
+  if (dyn) {
+    try {
+      // The map is the same photo at several resolutions ({url: [w,h]}) -- just the largest is wanted,
+      // not all of them, or the picker ends up with several near-duplicate copies of one photo.
+      const sizes = Object.entries(JSON.parse(dyn.getAttribute("data-a-dynamic-image")));
+      sizes.sort((a, b) => (b[1][0] * b[1][1]) - (a[1][0] * a[1][1]));
+      if (sizes[0]) addImg(sizes[0][0]);
+    } catch (e) {}
+  }
+  doc.querySelectorAll("[data-ssf-share-icon]").forEach(el => { try { addImg(JSON.parse(el.getAttribute("data-ssf-share-icon")).productImage); } catch (e) {} });
 
   /* Listings are assumed new/sealed unless the page itself says otherwise. */
   const usedHints = /\b(pre[- ]?owned|second[- ]?hand|used|refurbished|open box|no box|loose|as[- ]?is|previously owned|display(?:ed)? only)\b/i;
@@ -1315,10 +1339,12 @@ async function fillFromUrl(it, paintPhotos, dup) {
     }
     let got = 0;
     if (d.images.length) hint.textContent = "Getting photos…";
-    for (const src of d.images) {
-      if (photos.length >= MAXP) break;
-      try { const p = await fetchImage(src); if (!photos.includes(p)) { photos.push(p); got++; } } catch (e) {}
-    }
+    // In parallel rather than one at a time -- a slow mobile connection made several sequential
+    // round-trips to fetch N photos feel like it was stuck/failing. Promise.all still resolves in
+    // the original (most-relevant-first) order regardless of which finishes first.
+    const room = Math.max(0, MAXP - photos.length);
+    const fetched = (await Promise.all(d.images.slice(0, room).map(src => fetchImage(src).catch(() => null)))).filter(Boolean);
+    for (const p of fetched) { if (!photos.includes(p)) { photos.push(p); got++; } }
     paintPhotos(); dup();
     const filled = [d.name && "name", d.brand && "brand", d.category && "category", d.description && "description",
       d.condition && "condition", d.price != null && "price", notedUrl && "notes", got && `${got} ${got === 1 ? "photo" : "photos"}`].filter(Boolean);
@@ -2925,23 +2951,29 @@ let ptrStartY = null, ptrActive = false;
 const PTR_THRESHOLD = 70;
 const ptrAtTop = () => (document.scrollingElement || document.documentElement).scrollTop <= 0;
 const ptrBlocked = () => sheetOpen || pickerOpen || state.selecting || !$("#welcome").hidden;
+/* No hidden-attribute toggling here -- SVGElement doesn't reflect the .hidden IDL property the way
+   HTMLElement does (setting it silently no-ops instead of removing the attribute), so it never
+   actually hid again once shown. The default opacity:0 + off-screen translateY in the CSS rule
+   already fully hides this with nothing further needed; these two functions only ever adjust that
+   same opacity/transform. */
 function ptrSetProgress(dy) {
   const el = $("#ptrIndicator");
-  el.hidden = false;
   const p = Math.min(1, dy / PTR_THRESHOLD);
-  el.style.opacity = p;
-  el.style.transform = `translateY(${-12 + 12 * p}px)`;
-  const ready = dy >= PTR_THRESHOLD;
-  el.classList.toggle("ptr-ready", ready);
-  $("#ptrLabel").textContent = ready ? "Release to sync" : "Pull to sync";
+  const travel = Math.min(dy, PTR_THRESHOLD + 16);
+  el.style.opacity = Math.min(1, p * 1.4);
+  el.style.transform = `translateX(-50%) translateY(${travel - 40}px) rotate(${p * 360}deg)`;
+  el.classList.toggle("ptr-ready", dy >= PTR_THRESHOLD);
 }
 function ptrReset() {
   const el = $("#ptrIndicator");
   el.classList.remove("ptr-ready");
-  el.style.opacity = ""; el.style.transform = ""; el.hidden = true;
-  $("#ptrLabel").textContent = "Pull to sync";
+  el.style.opacity = ""; el.style.transform = "";
 }
 document.addEventListener("touchstart", e => {
+  // Defensively reset first, every time, even if this touch turns out not to be a pull -- a rapid
+  // series of pulls could otherwise leave the badge visually stuck mid-gesture if some prior touch
+  // sequence's touchend/touchcancel never fired (observed as "the sync bar gets stuck").
+  ptrReset();
   ptrStartY = (e.touches.length === 1 && !ptrBlocked() && ptrAtTop()) ? e.touches[0].clientY : null;
   ptrActive = false;
 }, { passive: true });
