@@ -88,7 +88,7 @@ const firebaseConfig = {
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const PRI = { 3: "High priority", 2: "Medium priority", 1: "Low priority" };
-const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+const nf = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const statusEl = document.getElementById("status");
 const gridEl = document.getElementById("grid");

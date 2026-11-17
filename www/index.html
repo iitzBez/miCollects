@@ -77,10 +77,11 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .bar-track{height:8px;border-radius:4px;background:var(--sunk);overflow:hidden}
 .bar-fill{height:100%;background:var(--brass);border-radius:4px}
 .value-list{display:flex;flex-direction:column}
-.value-row{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.value-row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
 .value-row:last-child{border-bottom:0}
-.value-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.value-amt{flex:none;font-weight:650;font-variant-numeric:tabular-nums}
+.value-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-top:1px}
+.value-amt{flex:none;font-weight:650;font-variant-numeric:tabular-nums;text-align:right;display:flex;flex-direction:column;gap:2px}
+.value-sub{font-size:11px;font-weight:500;color:var(--muted)}
 .icon-btn svg{width:20px;height:20px}
 
 /* Toolbar */
@@ -183,6 +184,9 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 .select-btn{width:100%;min-height:46px;border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:16px;font-family:inherit;text-align:left;color:var(--ink);cursor:pointer}
 .select-btn svg{width:18px;height:18px;color:var(--muted);flex:none}
 .sheet h2{font:700 24px/1.2 var(--display);letter-spacing:-.015em;margin:0 0 14px}
+.sheet-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.sheet-head h2{margin:0 0 14px}
+.sheet-head .icon-btn{flex:none}
 .sheet h3{font:700 17px/1.3 var(--display);margin:26px 0 8px;padding-top:18px;border-top:1px solid var(--line)}
 .field{margin-bottom:14px;position:relative}
 .avatar-row{display:flex;align-items:center;gap:16px;margin-bottom:6px}
@@ -292,6 +296,7 @@ input.has-marquee::placeholder{color:transparent}
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-storage-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -517,7 +522,9 @@ function hideWelcomeIfOnboarded() {
 }
 if (!pendingInactivitySignOut) hideWelcomeIfOnboarded();
 function saveSettings() { try { localStorage.setItem("cabinet-settings", JSON.stringify(settings)); } catch (e) {} }
-const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+/* Locale pinned (not the device's) so the format is always "1,000.00" -- comma thousands, 2-decimal
+   full-stop cents -- regardless of what decimal/grouping convention the device's own locale uses. */
+const nf = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const money = n => settings.currency + nf.format(+n || 0);
 const LAYOUTS = ["grid1", "grid2", "grid3", "list"];
 if (!LAYOUTS.includes(settings.layout)) settings.layout = "grid2";
@@ -591,8 +598,12 @@ const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed,
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.2.0";
 const WHATS_NEW = [
+  { version: "1.2.0", date: "17 Nov 2026", items: [
+    "Collection Summary now also breaks down what you paid (alongside value), shows quantity on each item, and can be exported as a PDF or CSV from the download icon.",
+    "Money is always shown with 2 decimal places and comma thousands separators (e.g. R1,000.00), and a comma typed as a decimal point is now handled correctly."
+  ] },
   { version: "1.1.0", date: "17 Nov 2026", items: [
     "Added a Collection Summary (the pie-chart icon in the header) — item and value totals, a breakdown by category and brand, and every item ranked by value."
   ] },
@@ -1661,7 +1672,7 @@ function openForm(item, convertTo) {
 async function save() {
   const { it, isNew, convert } = editing;
   const v = id => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
-  const num = x => x === "" ? null : Math.max(0, Number(x));
+  const num = x => x === "" ? null : Math.max(0, Number(String(x).replace(",", ".")));
   const name = v("f-name");
   if (!name) { $("#f-name").focus(); toast("Give it a name first"); return; }
   Object.assign(it, { name, category: v("f-cat"), series: v("f-series"), brand: v("f-brand"), scale: v("f-scale"), color: v("f-color"), description: v("f-desc"),
@@ -1767,7 +1778,7 @@ function openBulkUpdate() {
   $("#bulkCancelBtn").addEventListener("click", closeSheet);
   $("#bulkSaveBtn").addEventListener("click", async () => {
     const v = id => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
-    const num = x => x === "" ? null : Math.max(0, Number(x));
+    const num = x => x === "" ? null : Math.max(0, Number(String(x).replace(",", ".")));
     const patch = {};
     const cat = v("bu-cat"); if (cat) patch.category = cat;
     const series = v("bu-series"); if (series) patch.series = series;
@@ -2382,6 +2393,8 @@ function openSummary() {
   const pieces = items.reduce((s, i) => s + (+i.qty || 1), 0);
   const total = items.reduce((s, i) => s + price(i), 0);
   const avg = total / n;
+  const totalPaid = items.reduce((s, i) => s + (+i.paid || 0), 0);
+  const avgPaid = totalPaid / n;
   const byCount = (key, fallback) => {
     const m = new Map();
     for (const i of items) { const k = (i[key] || "").trim() || fallback; m.set(k, (m.get(k) || 0) + 1); }
@@ -2397,22 +2410,182 @@ function openSummary() {
       <div class="bar-track"><div class="bar-fill" style="width:${Math.round(count / max * 100)}%"></div></div>
     </div>`;
   $("#sheetBody").innerHTML = `
-    <h2 id="sheetTitle">Collection Summary</h2>
+    <div class="sheet-head">
+      <h2 id="sheetTitle">Collection Summary</h2>
+      <button class="icon-btn" id="summaryExportBtn" aria-label="Export">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+      </button>
+    </div>
     <div class="stat-grid">
       <div class="stat-tile"><span class="stat-num">${n}</span><span class="stat-label">${n === 1 ? "item" : "items"}</span></div>
       <div class="stat-tile"><span class="stat-num">${pieces}</span><span class="stat-label">${pieces === 1 ? "piece" : "pieces"}</span></div>
+      <div class="stat-tile"><span class="stat-num">${money(totalPaid)}</span><span class="stat-label">total paid</span></div>
       <div class="stat-tile"><span class="stat-num">${money(total)}</span><span class="stat-label">total value</span></div>
-      <div class="stat-tile"><span class="stat-num">${money(avg)}</span><span class="stat-label">avg. per item</span></div>
+      <div class="stat-tile"><span class="stat-num">${money(avgPaid)}</span><span class="stat-label">avg. paid/item</span></div>
+      <div class="stat-tile"><span class="stat-num">${money(avg)}</span><span class="stat-label">avg. value/item</span></div>
     </div>
     <h3>By category</h3>
     ${cats.map(([k, c]) => barRow(k, c, maxCat)).join("")}
     <h3>By brand</h3>
     ${brands.map(([k, c]) => barRow(k, c, maxBrand)).join("")}
     <h3>By value (highest first)</h3>
-    <div class="value-list">${byValue.map(i => `<div class="value-row"><span class="value-name">${esc(i.name || "Untitled")}</span><span class="value-amt">${money(price(i))}</span></div>`).join("")}</div>
+    <div class="value-list">${byValue.map(i => `<div class="value-row"><span class="value-name">${esc(i.name || "Untitled")}</span><span class="value-amt">${money(price(i))}<span class="value-sub">paid ${money(+i.paid || 0)} · qty ${+i.qty || 1}</span></span></div>`).join("")}</div>
     <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>`;
   $("#sDone").addEventListener("click", closeSheet);
+  $("#summaryExportBtn").addEventListener("click", () => openPicker("Export", [
+    ["pdf", "PDF"], ["csv", "CSV"]
+  ], null, v => {
+    if (v === "csv") exportSummaryCsv({ n, pieces, totalPaid, total, avgPaid, avg, byValue });
+    else exportSummaryPdf({ n, pieces, totalPaid, total, avgPaid, avg, cats, brands, byValue });
+  }));
   showSheet();
+}
+
+/* Shares/downloads a small generated file -- same cascade as exportBackup() (native Filesystem+Share,
+   then Web Share with a File, then a plain browser download), but self-contained here since the final
+   fallback differs (a direct Blob download works from any sheet, unlike exportBackup()'s reliance on
+   a textarea that only exists in the Settings sheet). */
+async function shareOrDownload(name, blob, mimeType, shareTitle) {
+  const P = window.Capacitor && window.Capacitor.Plugins;
+  if (P && P.Filesystem && P.Share) {
+    try {
+      const base64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(",")[1]);
+        r.onerror = rej;
+        r.readAsDataURL(blob);
+      });
+      const r = await P.Filesystem.writeFile({ path: name, data: base64, directory: "CACHE" });
+      await P.Share.share({ title: shareTitle, url: r.uri, dialogTitle: `Save ${name}` });
+      return;
+    } catch (e) { if (/cancel/i.test(String(e && e.message))) return; }
+  }
+  try {
+    const file = new File([blob], name, { type: mimeType });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: shareTitle }); return; }
+  } catch (e) { if (e && e.name === "AbortError") return; }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+const csvCell = v => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+async function exportSummaryCsv({ n, pieces, totalPaid, total, avgPaid, avg, byValue }) {
+  const rows = [
+    ["Collection Summary"], [],
+    ["Items", n], ["Pieces", pieces],
+    ["Total Paid", totalPaid.toFixed(2)], ["Total Value", total.toFixed(2)],
+    ["Avg. Paid/Item", avgPaid.toFixed(2)], ["Avg. Value/Item", avg.toFixed(2)],
+    [],
+    ["Name", "Category", "Brand", "Qty", "Paid", "Value Each", "Total Value"],
+    ...byValue.map(i => [i.name || "Untitled", i.category || "", i.brand || "", +i.qty || 1, (+i.paid || 0).toFixed(2), (+i.value || 0).toFixed(2), price(i).toFixed(2)])
+  ];
+  const csv = rows.map(r => r.map(csvCell).join(",")).join("\r\n");
+  const name = `micollects-summary-${new Date().toISOString().slice(0, 10)}.csv`;
+  await shareOrDownload(name, new Blob([csv], { type: "text/csv" }), "text/csv", "Collection summary (CSV)");
+}
+
+/* Drawn with jsPDF's own vector primitives (rounded rects, lines, text) rather than rendering real
+   HTML -- html2canvas-based rendering is a much heavier, flakier dependency inside an Android WebView.
+   Colors are the light-theme palette from :root, since a PDF page is always light regardless of the
+   app's current theme. */
+function exportSummaryPdf({ n, pieces, totalPaid, total, avgPaid, avg, cats, brands, byValue }) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const marginX = 15, pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
+  const contentW = pageW - marginX * 2;
+  const INK = [15, 23, 42], BRASS = [37, 99, 235], MUTED = [100, 116, 139], SUNK = [241, 244, 248], LINE = [226, 232, 240];
+  let y = 20;
+  const ensureSpace = h => { if (y + h > pageH - 15) { doc.addPage(); y = 20; } };
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(20);
+  doc.setTextColor(...INK); doc.text("mi", marginX, y);
+  doc.setTextColor(...BRASS); doc.text("Collects", marginX + doc.getTextWidth("mi"), y);
+  y += 18;
+  doc.setTextColor(...INK); doc.setFontSize(16); doc.setFont("helvetica", "bold");
+  doc.text("Collection Summary", marginX, y);
+  doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(...MUTED);
+  doc.text(new Date().toLocaleDateString(), pageW - marginX, y, { align: "right" });
+  y += 10;
+
+  const tiles = [
+    [String(n), n === 1 ? "item" : "items"], [String(pieces), pieces === 1 ? "piece" : "pieces"],
+    [money(totalPaid), "total paid"], [money(total), "total value"],
+    [money(avgPaid), "avg. paid/item"], [money(avg), "avg. value/item"]
+  ];
+  const tileW = (contentW - 6) / 2, tileH = 16;
+  for (let i = 0; i < tiles.length; i += 2) {
+    ensureSpace(tileH + 4);
+    for (let c = 0; c < 2 && i + c < tiles.length; c++) {
+      const x = marginX + c * (tileW + 6);
+      doc.setFillColor(...SUNK); doc.roundedRect(x, y, tileW, tileH, 3, 3, "F");
+      doc.setTextColor(...INK); doc.setFont("helvetica", "bold"); doc.setFontSize(13);
+      doc.text(tiles[i + c][0], x + 5, y + 7);
+      doc.setTextColor(...MUTED); doc.setFont("helvetica", "normal"); doc.setFontSize(8);
+      doc.text(tiles[i + c][1], x + 5, y + 12.5);
+    }
+    y += tileH + 4;
+  }
+  y += 3;
+
+  const sectionHeading = label => {
+    ensureSpace(14);
+    doc.setDrawColor(...LINE); doc.line(marginX, y, pageW - marginX, y); y += 7;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...INK);
+    doc.text(label, marginX, y); y += 7;
+  };
+  const barRow = (label, count, max) => {
+    ensureSpace(10);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(...INK);
+    doc.text(label, marginX, y);
+    doc.text(String(count), pageW - marginX, y, { align: "right" });
+    y += 3;
+    doc.setFillColor(...SUNK); doc.roundedRect(marginX, y, contentW, 2.2, 1, 1, "F");
+    doc.setFillColor(...BRASS); doc.roundedRect(marginX, y, Math.max(2, contentW * (count / max)), 2.2, 1, 1, "F");
+    y += 7;
+  };
+
+  sectionHeading("By category");
+  const maxCat = cats[0][1]; cats.forEach(([k, c]) => barRow(k, c, maxCat));
+  y += 3;
+  sectionHeading("By brand");
+  const maxBrand = brands[0][1]; brands.forEach(([k, c]) => barRow(k, c, maxBrand));
+  y += 3;
+  sectionHeading("By value (highest first)");
+  /* A row per item, not a bubble per item -- with a collection of 100+ items the earlier bubble
+     layout (~17mm tall each) ran to many pages; a dense table row (7mm) fits 4-5x as many per page. */
+  const colQty = 16, colPaid = 30, colValue = 32, colName = contentW - colQty - colPaid - colValue;
+  const xName = marginX, xQtyEnd = marginX + colName + colQty, xPaidEnd = xQtyEnd + colPaid, xValueEnd = xPaidEnd + colValue;
+  const rowH = 7;
+  const drawValueHeader = () => {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...MUTED);
+    doc.text("Name", xName, y);
+    doc.text("Qty", xQtyEnd, y, { align: "right" });
+    doc.text("Paid", xPaidEnd, y, { align: "right" });
+    doc.text("Value", xValueEnd, y, { align: "right" });
+    y += 2;
+    doc.setDrawColor(...LINE); doc.line(marginX, y, pageW - marginX, y);
+    y += 5;
+  };
+  drawValueHeader();
+  byValue.forEach((it, idx) => {
+    if (y + rowH > pageH - 15) { doc.addPage(); y = 20; drawValueHeader(); }
+    if (idx % 2 === 1) { doc.setFillColor(...SUNK); doc.rect(marginX, y - 4.5, contentW, rowH, "F"); }
+    let nm = it.name || "Untitled";
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
+    while (doc.getTextWidth(nm) > colName - 3 && nm.length > 1) nm = nm.slice(0, -1);
+    if (nm !== (it.name || "Untitled")) nm = nm.slice(0, -2) + "…";
+    doc.setTextColor(...INK); doc.text(nm, xName, y);
+    doc.text(String(+it.qty || 1), xQtyEnd, y, { align: "right" });
+    doc.setTextColor(...MUTED); doc.text(money(+it.paid || 0), xPaidEnd, y, { align: "right" });
+    doc.setTextColor(...INK); doc.setFont("helvetica", "bold");
+    doc.text(money(price(it)), xValueEnd, y, { align: "right" });
+    y += rowH;
+  });
+
+  const name = `micollects-summary-${new Date().toISOString().slice(0, 10)}.pdf`;
+  shareOrDownload(name, doc.output("blob"), "application/pdf", "Collection summary (PDF)");
 }
 
 function openWhatsNew() {
