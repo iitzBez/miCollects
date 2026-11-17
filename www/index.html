@@ -626,8 +626,12 @@ const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed,
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.5.4";
+const APP_VERSION = "1.5.5";
 const WHATS_NEW = [
+  { version: "1.5.5", date: "17 Nov 2026", items: [
+    "Collection tiles now show the price you paid instead of the current value.",
+    "Category, Series, Brand, Size and Color dropdowns now show every value you've added, not just the first 8 — scroll to see the rest."
+  ] },
   { version: "1.5.4", date: "17 Nov 2026", items: [
     "Fixed large prices (5 digits or more) getting cut off at the edge of a grid tile.",
     "Fixed the gallery photo picker only letting you choose one photo at a time when adding/editing an item — you can select several again."
@@ -738,7 +742,7 @@ function card(i) {
   const p = i.priority || 2;
   const foot = wish
     ? `<span class="pri p${p}">${PRI[p]}</span><span class="val">${i.target ? money(i.target) : ""}</span>`
-    : `<span>${esc(i.condition || "")}</span><span class="val">${i.value ? money(price(i)) : ""}</span>`;
+    : `<span>${esc(i.condition || "")}</span><span class="val">${i.paid ? money(+i.paid || 0) : ""}</span>`;
   return `<div class="card${wish ? " wish" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}" role="button" tabindex="0" data-id="${esc(i.id)}" aria-label="${esc(i.name)}" aria-pressed="${selecting ? String(selected) : "false"}">
     <div class="ph">${selecting ? `<span class="sel-dot" aria-hidden="true"></span>` : ""}${ph}${!wish && +i.qty > 1 ? `<span class="qty">×${+i.qty}</span>` : ""}</div>
     <div class="cb">
@@ -1490,7 +1494,7 @@ function wireSuggest(inputId, listId, fieldKey) {
   const render = () => {
     const values = predefinedList(fieldKey);
     const q = norm(input.value);
-    const matches = values.filter(c => norm(c).includes(q) && norm(c) !== q).slice(0, 8);
+    const matches = values.filter(c => norm(c).includes(q) && norm(c) !== q);
     const typed = input.value.trim();
     const canAdd = typed && !values.some(v => norm(v) === norm(typed));
     if (!matches.length && !canAdd) { close(); return; }
