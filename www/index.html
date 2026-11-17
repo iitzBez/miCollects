@@ -626,8 +626,11 @@ const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed,
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.5.5";
+const APP_VERSION = "1.5.6";
 const WHATS_NEW = [
+  { version: "1.5.6", date: "17 Nov 2026", items: [
+    "Fixed Adding using URL from Amazon not filling in a price. If the item is on sale, Price paid now fills with the sale price and Value with the full price."
+  ] },
   { version: "1.5.5", date: "17 Nov 2026", items: [
     "Collection tiles now show the price you paid instead of the current value.",
     "Category, Series, Brand, Size and Color dropdowns now show every value you've added, not just the first 8 — scroll to see the rest."
@@ -1304,6 +1307,32 @@ function extractProduct(html, pageUrl) {
     const p = parsePrice(meta("product:price:amount", "og:price:amount", "price") || itemprop("price"));
     if (p != null) { price = p; currency = meta("product:price:currency", "og:price:currency", "priceCurrency") || itemprop("priceCurrency"); }
   }
+  /* Amazon has no Product JSON-LD or price meta tags either (same limitation as its photos, above).
+     The price you'd actually pay lives in a hidden div's own JSON text (the page's normal JS reads it
+     the same way); when the item is on sale, the full/list price it's discounted from is only ever
+     plain text, struck through, in a separate element. */
+  let listPrice = null;
+  if (price == null) {
+    const payJson = doc.querySelector(".twister-plus-buying-options-price-data");
+    if (payJson) {
+      try {
+        const group = Object.values(JSON.parse(payJson.textContent.trim()))[0];
+        const first = group && group[0];
+        const p = parsePrice(first && first.priceAmount);
+        if (p != null) { price = p; if (first.currencySymbol === "R") currency = "ZAR"; }
+      } catch (e) {}
+    }
+    if (price == null) {
+      const payEl = doc.querySelector(".apex-pricetopay-value .a-offscreen, .priceToPay .a-offscreen");
+      const p = parsePrice(payEl && payEl.textContent);
+      if (p != null) price = p;
+    }
+  }
+  if (price != null) {
+    const wasEl = doc.querySelector(".apex-basisprice-value .a-offscreen, .basisPrice .a-offscreen");
+    const was = parsePrice(wasEl && wasEl.textContent);
+    if (was != null && was > price) listPrice = was;
+  }
 
   const images = [];
   const addImg = v => {
@@ -1343,7 +1372,7 @@ function extractProduct(html, pageUrl) {
   const usedHints = /\b(pre[- ]?owned|second[- ]?hand|used|refurbished|open box|no box|loose|as[- ]?is|previously owned|display(?:ed)? only)\b/i;
   const condition = usedHints.test(`${product.name || ""} ${product.description || ""} ${name} ${description}`) ? "" : "Sealed / new in box";
 
-  return { name, description, brand, category, condition, price, currency: String(currency || "").toUpperCase(), images: images.slice(0, MAXP) };
+  return { name, description, brand, category, condition, price, listPrice, currency: String(currency || "").toUpperCase(), images: images.slice(0, MAXP) };
 }
 
 async function fillFromUrl(it, paintPhotos, dup) {
@@ -1368,7 +1397,7 @@ async function fillFromUrl(it, paintPhotos, dup) {
     const set = (id, v) => { const el = document.getElementById(id); if (el && v != null && v !== "") { el.value = v; el.dispatchEvent(new Event("input")); } };
     set("f-name", d.name); set("f-brand", d.brand); set("f-cat", d.category); set("f-desc", d.description); set("f-cond", d.condition);
     if (d.price != null) {
-      if (it.list === "owned") { set("f-paid", d.price); set("f-value", d.price); } else set("f-target", d.price);
+      if (it.list === "owned") { set("f-paid", d.price); set("f-value", d.listPrice ?? d.price); } else set("f-target", d.price);
     }
     let notedUrl = false;
     const notesEl = $("#f-notes");
