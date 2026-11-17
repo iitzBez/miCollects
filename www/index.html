@@ -389,7 +389,7 @@ const store = {
   async clear() { if (!this.db) { this.mem.clear(); return; } await this.req(this.os("readwrite").clear()); }
 };
 
-const settings = { currency: "R", layout: "grid2", geminiKey: "", onboarded: false, lastSynced: null, wishlistShareToken: null,
+const settings = { currency: "R", layout: "grid2", sort: "recent", group: "none", geminiKey: "", onboarded: false, lastSynced: null, wishlistShareToken: null,
   firstName: "", lastName: "", phone: "", avatarUrl: "", theme: "system" };
 function timeAgo(ts) {
   if (!ts) return "";
@@ -465,7 +465,7 @@ const LAYOUTS = ["grid1", "grid2", "grid3", "list"];
 if (!LAYOUTS.includes(settings.layout)) settings.layout = "grid2";
 
 /* ---------- State ---------- */
-const state = { tab: "owned", q: "", cat: "All", pillField: "all", pillVal: "All", sort: "recent", group: "none", layout: settings.layout, items: [], selecting: false, selected: new Set() };
+const state = { tab: "owned", q: "", cat: "All", pillField: "all", pillVal: "All", sort: settings.sort, group: settings.group, layout: settings.layout, items: [], selecting: false, selected: new Set() };
 let sortOptions = [], groupOptions = [];
 const PRI = { 3: "High", 2: "Medium", 1: "Low" };
 const CONDITIONS = ["", "Sealed / new in box", "Mint", "Near mint", "Excellent", "Good", "Fair", "Poor"];
@@ -2265,8 +2265,12 @@ $("#pillField").addEventListener("click", e => {
   state.pillField = b.dataset.pillfield; state.pillVal = "All"; render();
 });
 $("#q").addEventListener("input", e => { state.q = e.target.value; render(); });
-$("#sortBtn").addEventListener("click", () => openPicker("Sort by", sortOptions, state.sort, v => { state.sort = v; render(); }));
-$("#groupBtn").addEventListener("click", () => openPicker("Group by", groupOptions, state.group, v => { state.group = v; render(); }));
+$("#sortBtn").addEventListener("click", () => openPicker("Sort by", sortOptions, state.sort, v => {
+  state.sort = settings.sort = v; saveSettings(); render(); cloudPushSettings();
+}));
+$("#groupBtn").addEventListener("click", () => openPicker("Group by", groupOptions, state.group, v => {
+  state.group = settings.group = v; saveSettings(); render(); cloudPushSettings();
+}));
 $("#layoutBar").addEventListener("click", e => {
   const b = e.target.closest("[data-layout]");
   if (b) { state.layout = settings.layout = b.dataset.layout; saveSettings(); render(); cloudPushSettings(); return; }
