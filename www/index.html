@@ -408,6 +408,23 @@ function markActiveAndCheckTimeout() {
   markActive();
   return exceeded;
 }
+/* A background/foreground transition isn't only triggered by the user actually leaving the app --
+   some Android versions fire a pause/resume blip from things like the keyboard or an autofill
+   popup appearing, even mid-use. Without this, that blip gets checked against a clock that was
+   last reset whenever the app was *last actually* backgrounded, which could be well before this
+   active session started -- miscounting real foreground time as inactivity and signing out from
+   under someone who's actively using the app. Refreshing on real taps/keystrokes keeps the clock
+   current through a false blip, without ever counting idle-but-open time: the timeout is still
+   only ever checked on an actual return-to-foreground (see the appStateChange listener below). */
+let lastInteractionMark = 0;
+function markActiveFromInteraction() {
+  const now = Date.now();
+  if (now - lastInteractionMark < 5000) return;
+  lastInteractionMark = now;
+  markActive();
+}
+document.addEventListener("pointerdown", markActiveFromInteraction, { passive: true });
+document.addEventListener("keydown", markActiveFromInteraction);
 let pendingInactivitySignOut = markActiveAndCheckTimeout();
 /* "system" means no override: the prefers-color-scheme media query in the CSS takes it from there.
    Applied immediately on load (before first paint) so there's no flash of the wrong theme, and again
@@ -2138,6 +2155,11 @@ $("#settingsBtn").addEventListener("click", openSettings);
 function showWelcome() {
   $("#welcome").hidden = false;
   $("#wSignIn").hidden = $("#wSignUp").hidden = !cloudEnabled;
+  // Always reset to the plain choice screen -- this can be called while the sign-in/up form is
+  // already open (e.g. a forced sign-out mid-session), and leaving that form up is what let it
+  // show stacked underneath the choices instead of being replaced by them.
+  $("#welcomeForm").hidden = true;
+  $("#wfHint").textContent = "";
   setTimeout(() => { $("#welcomeChoices").hidden = false; }, 1000);
 }
 function finishWelcome() { settings.onboarded = true; saveSettings(); $("#welcome").hidden = true; }
