@@ -47,6 +47,8 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .brand{margin:0 0 6px;font:800 15px/1 var(--display);letter-spacing:-.01em;color:var(--ink)}
 .brand span{color:var(--brass)}
 .icon-btn{position:relative;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;flex:none}
+.header-avatar{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--sunk);display:grid;place-items:center;overflow:hidden;flex:none;font:700 16px/1 var(--display);color:var(--muted)}
+.header-avatar img{width:100%;height:100%;object-fit:cover}
 .icon-btn.syncing::after{content:"";position:absolute;top:2px;right:2px;width:10px;height:10px;border-radius:50%;background:var(--brass);box-shadow:0 0 0 2px var(--surface);animation:syncPulse 1s ease-in-out infinite}
 @keyframes syncPulse{0%,100%{opacity:1}50%{opacity:.25}}
 @media (prefers-reduced-motion:reduce){.icon-btn.syncing::after{animation:none}}
@@ -297,6 +299,7 @@ input.has-marquee::placeholder{color:transparent}
   <button class="icon-btn" id="settingsBtn" aria-label="Settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
   </button>
+  <div class="header-avatar" id="headerAvatar" aria-hidden="true" hidden></div>
 </header>
 
 <div class="toolbar">
@@ -603,6 +606,15 @@ function render() {
   const owned = state.tab === "owned";
   const tabItems = state.items.filter(i => i.list === state.tab);
   $("#title").textContent = owned ? "Collection" : "Wishlist";
+
+  const ha = $("#headerAvatar");
+  if (cloudUser) {
+    ha.hidden = false;
+    const initials = (((settings.firstName || "").trim()[0] || "") + ((settings.lastName || "").trim()[0] || "")) || (cloudUser.email || "?")[0].toUpperCase();
+    ha.innerHTML = settings.avatarUrl ? `<img src="${esc(settings.avatarUrl)}" alt="">` : `<span>${esc(initials)}</span>`;
+  } else {
+    ha.hidden = true; ha.innerHTML = "";
+  }
 
   $("#grid").className = "grid " + (state.layout === "list" ? "view-list" : state.layout.replace("grid", "cols-"));
   document.querySelectorAll("#layoutBar [data-layout]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.layout === state.layout)));
@@ -2163,7 +2175,11 @@ function openSettings() {
         if (!isValidEmail(email)) { authHint.textContent = "Enter a valid email address."; return; }
         if (requirePolicy) { const err = passwordPolicyError(pass); if (err) { authHint.textContent = err; return; } }
         authHint.textContent = "Working…";
-        try { await fn(email, pass); toast(okMsg); authMode = null; } catch (e) { authHint.textContent = authErrorMsg(e); }
+        try {
+          await fn(email, pass);
+          toast(okMsg); authMode = null;
+          state.tab = "owned"; closeSheet(); render();
+        } catch (e) { authHint.textContent = authErrorMsg(e); }
       };
       if (authMode === "signin") $("#signInBtn").addEventListener("click", () => authAction(cloudSignIn, "Signed in", false));
       if (authMode === "signup") $("#signUpBtn").addEventListener("click", () => authAction(cloudSignUp, "Account created", true));
