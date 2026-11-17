@@ -47,8 +47,14 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .brand{margin:0 0 6px;font:800 15px/1 var(--display);letter-spacing:-.01em;color:var(--ink)}
 .brand span{color:var(--brass)}
 .icon-btn{position:relative;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;flex:none}
-.header-avatar{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--sunk);display:grid;place-items:center;overflow:hidden;flex:none;font:700 16px/1 var(--display);color:var(--muted)}
+.header-avatar{width:44px;height:44px;padding:0;border-radius:50%;border:1px solid var(--line);background:var(--sunk);display:grid;place-items:center;overflow:hidden;flex:none;cursor:pointer;font:700 16px/1 var(--display);color:var(--muted)}
 .header-avatar img{width:100%;height:100%;object-fit:cover}
+.header-avatar svg{width:22px;height:22px}
+@keyframes login-dot-pop{0%,100%{opacity:.15;transform:scale(.5)}40%,60%{opacity:1;transform:scale(1)}}
+.icon-anim-login .login-dot{animation:login-dot-pop 1.6s ease-in-out infinite;transform-origin:center;transform-box:fill-box}
+.icon-anim-login .login-dot-2{animation-delay:.15s}
+.icon-anim-login .login-dot-3{animation-delay:.3s}
+.icon-anim-login .login-dot-4{animation-delay:.45s}
 .icon-btn.syncing::after{content:"";position:absolute;top:2px;right:2px;width:10px;height:10px;border-radius:50%;background:var(--brass);box-shadow:0 0 0 2px var(--surface);animation:syncPulse 1s ease-in-out infinite}
 @keyframes syncPulse{0%,100%{opacity:1}50%{opacity:.25}}
 @media (prefers-reduced-motion:reduce){.icon-btn.syncing::after{animation:none}}
@@ -305,7 +311,7 @@ input.has-marquee::placeholder{color:transparent}
   <button class="icon-btn" id="settingsBtn" aria-label="Settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
   </button>
-  <div class="header-avatar" id="headerAvatar" aria-hidden="true" hidden></div>
+  <button type="button" class="header-avatar" id="headerAvatar" aria-label="Account"></button>
 </header>
 
 <div class="toolbar">
@@ -540,7 +546,10 @@ const ICONS = {
   poor: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.7a2 2 0 0 0-2 1.7l-1.4 9A2 2 0 0 0 4.3 15z"/><path d="M17 13h4V3h-4z"/></svg>`,
   camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3.5"/></svg>`,
   gallery: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>`,
-  rarity: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 12L2 9Z"/><path d="M11 3 8 9l4 12 4-12-3-6"/><path d="M2 9h20"/></svg>`
+  rarity: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 12L2 9Z"/><path d="M11 3 8 9l4 12 4-12-3-6"/><path d="M2 9h20"/></svg>`,
+  account: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>`,
+  login: `<svg class="icon-anim-login" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--brass)"><circle cx="12" cy="6.5" r="3.2"/><path d="M5.5 15.5a6.5 6.5 0 0 1 13 0"/><rect x="4" y="18" width="16" height="4.5" rx="2.25"/><circle class="login-dot login-dot-1" cx="7.2" cy="20.25" r=".9" fill="currentColor" stroke="none"/><circle class="login-dot login-dot-2" cx="10.4" cy="20.25" r=".9" fill="currentColor" stroke="none"/><circle class="login-dot login-dot-3" cx="13.6" cy="20.25" r=".9" fill="currentColor" stroke="none"/><circle class="login-dot login-dot-4" cx="16.8" cy="20.25" r=".9" fill="currentColor" stroke="none"/></svg>`,
+  userPlus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="7" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg>`
 };
 const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed, "Mint": ICONS.layers, "Near mint": ICONS.layers, "Excellent": ICONS.excellent, "Good": ICONS.good, "Fair": ICONS.fair, "Poor": ICONS.poor };
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
@@ -615,13 +624,14 @@ function render() {
 
   const ha = $("#headerAvatar");
   if (cloudUser) {
-    ha.hidden = false;
+    ha.setAttribute("aria-label", "Account");
     const firstInitial = (settings.firstName || "").trim()[0];
     ha.innerHTML = settings.avatarUrl ? `<img src="${esc(settings.avatarUrl)}" alt="">`
       : firstInitial ? `<span>${esc(firstInitial.toUpperCase())}</span>`
       : `<img src="favicon.png" alt="">`;
   } else {
-    ha.hidden = true; ha.innerHTML = "";
+    ha.setAttribute("aria-label", "Sign in or create account");
+    ha.innerHTML = ICONS.account;
   }
 
   $("#grid").className = "grid " + (state.layout === "list" ? "view-list" : state.layout.replace("grid", "cols-"));
@@ -1205,7 +1215,7 @@ async function fillFromUrl(it, paintPhotos, dup) {
 
 /* ---------- Item form ---------- */
 let editing = null, photos = [];
-let settingsTab = "account", authMode = null;
+let settingsTab = "general", authMode = null;
 const MAXP = 8;
 
 /* Scrolls a too-long placeholder left-to-right and resets, so it stays fully readable in a narrow
@@ -1786,7 +1796,7 @@ async function saveAvatar(dataUrl) {
     const url = await uploadAvatar(dataUrl);
     settings.avatarUrl = url; saveSettings(); await cloudPushSettings();
     toast("Profile picture updated");
-    openSettings();
+    openAccount();
   } catch (e) { if (hint) hint.textContent = "Couldn’t upload: " + authErrorMsg(e); }
 }
 
@@ -2026,7 +2036,10 @@ async function shareItemsNow(items) {
 }
 
 function refreshSettingsIfOpen() {
-  if (sheetOpen && $("#sheetTitle") && $("#sheetTitle").textContent === "Settings") openSettings();
+  if (!sheetOpen || !$("#sheetTitle")) return;
+  const t = $("#sheetTitle").textContent;
+  if (t === "Settings") openSettings();
+  else if (t === "Account") openAccount();
 }
 
 /* Items are partitioned by `scope` (see store.all above): switching accounts, or signing out back to
@@ -2158,34 +2171,66 @@ function apiTabHtml() {
     </div>`;
 }
 
-function openSettings() {
-  const tabs = cloudUser
-    ? [["account", "My Account"], ["general", "General"], ["api", "API"]]
-    : [["account", "Account"], ["general", "General"]];
-  if (!tabs.some(([k]) => k === settingsTab)) settingsTab = cloudUser ? "account" : "general";
-  const tabBody = settingsTab === "account"
-    ? (cloudUser ? accountTabHtml() : !cloudEnabled ? `<p class="hint">Cloud sync isn’t set up for this build yet.</p>` : authAreaHtml())
-    : settingsTab === "api" ? apiTabHtml() : generalTabHtml();
+/* Reached from the header avatar/account button, not from Settings -- signing in/up, editing the
+   signed-in account, and the sign-in prompt for a signed-out user all live here now. */
+function openAccount() {
+  const body = cloudUser ? accountTabHtml() : !cloudEnabled ? `<p class="hint">Cloud sync isn’t set up for this build yet.</p>` : authAreaHtml();
   $("#sheetBody").innerHTML = `
-    <h2 id="sheetTitle">Settings</h2>
-    <div class="settings-tabs" id="settingsTabs" role="tablist">
-      ${tabs.map(([k, l]) => `<button type="button" class="stab" data-stab="${k}" role="tab" aria-selected="${settingsTab === k}">${esc(l)}</button>`).join("")}
-    </div>
-    <div id="settingsTabBody">${tabBody}</div>
+    <h2 id="sheetTitle">Account</h2>
+    <div id="accountBody">${body}</div>
     <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>`;
 
-  $("#settingsTabs").addEventListener("click", e => {
-    const b = e.target.closest("[data-stab]"); if (!b || b.dataset.stab === settingsTab) return;
-    settingsTab = b.dataset.stab; authMode = null; openSettings();
-  });
-
-  if (settingsTab === "account" && cloudEnabled && !cloudUser) {
+  if (cloudUser) {
+    $("#signOutBtn").addEventListener("click", () => cloudSignOut());
+    $("#avatarBtn").addEventListener("click", async () => {
+      const hint = $("#avatarHint");
+      const P = window.Capacitor && window.Capacitor.Plugins;
+      if (P && P.Camera) {
+        const source = await pickPhotoSource();
+        if (!source) return;
+        try {
+          const shot = await P.Camera.getPhoto({ quality: 80, resultType: "base64", source, saveToGallery: false });
+          if (!shot || !shot.base64String) return;
+          const compressed = await compressSrc(`data:image/${shot.format || "jpeg"};base64,${shot.base64String}`);
+          await saveAvatar(compressed);
+        } catch (e) { if (!/cancel/i.test(String(e && e.message))) hint.textContent = "Couldn’t get that photo."; }
+      } else {
+        $("#avatarIn").click();
+      }
+    });
+    $("#avatarIn").addEventListener("change", async e => {
+      const f = e.target.files && e.target.files[0]; if (!f) return;
+      try { const compressed = await compress(f); await saveAvatar(compressed); }
+      catch (err) { $("#avatarHint").textContent = err.message || "That photo couldn’t be used."; }
+      e.target.value = "";
+    });
+    const avatarRemove = $("#avatarRemoveBtn");
+    if (avatarRemove) avatarRemove.addEventListener("click", async () => {
+      try { await fbStorage.ref(`users/${cloudUser.uid}/avatar.jpg`).delete(); } catch (e) {}
+      settings.avatarUrl = ""; saveSettings(); await cloudPushSettings();
+      toast("Profile picture removed"); openAccount();
+    });
+    $("#acctSaveBtn").addEventListener("click", async () => {
+      settings.firstName = properCase($("#s-fname").value);
+      settings.lastName = properCase($("#s-lname").value);
+      settings.phone = $("#s-phone").value.trim();
+      saveSettings();
+      const hint = $("#acctHint"); hint.textContent = "Saving…";
+      try { await cloudPushSettings(); hint.textContent = "Saved."; toast("Account details saved"); }
+      catch (e) { hint.textContent = "Saved here, but couldn’t sync."; }
+    });
+    $("#acctResetBtn").addEventListener("click", async () => {
+      const hint = $("#acctResetHint"); hint.textContent = "Sending…";
+      try { await cloudResetPassword(cloudUser.email); hint.textContent = "Check your email for a reset link."; }
+      catch (e) { hint.textContent = "Couldn’t send: " + authErrorMsg(e); }
+    });
+  } else if (cloudEnabled) {
     if (!authMode) {
-      $("#showSignInBtn").addEventListener("click", () => { authMode = "signin"; openSettings(); });
-      $("#showSignUpBtn").addEventListener("click", () => { authMode = "signup"; openSettings(); });
+      $("#showSignInBtn").addEventListener("click", () => { authMode = "signin"; openAccount(); });
+      $("#showSignUpBtn").addEventListener("click", () => { authMode = "signup"; openAccount(); });
     } else {
       const authHint = $("#authHint");
-      $("#authBackBtn").addEventListener("click", () => { authMode = null; openSettings(); });
+      $("#authBackBtn").addEventListener("click", () => { authMode = null; openAccount(); });
       const authAction = async (fn, okMsg, requirePolicy) => {
         const email = $("#s-email").value.trim(), pass = $("#s-pass").value;
         let firstName = "", lastName = "";
@@ -2219,54 +2264,30 @@ function openSettings() {
       });
     }
   }
+  $("#sDone").addEventListener("click", closeSheet);
+  addClearButtons($("#sheetBody"));
+  addPasswordToggles($("#sheetBody"));
+  showSheet();
+}
 
-  if (settingsTab === "account") {
-    if (cloudUser) {
-      $("#signOutBtn").addEventListener("click", () => cloudSignOut());
-      $("#avatarBtn").addEventListener("click", async () => {
-        const hint = $("#avatarHint");
-        const P = window.Capacitor && window.Capacitor.Plugins;
-        if (P && P.Camera) {
-          const source = await pickPhotoSource();
-          if (!source) return;
-          try {
-            const shot = await P.Camera.getPhoto({ quality: 80, resultType: "base64", source, saveToGallery: false });
-            if (!shot || !shot.base64String) return;
-            const compressed = await compressSrc(`data:image/${shot.format || "jpeg"};base64,${shot.base64String}`);
-            await saveAvatar(compressed);
-          } catch (e) { if (!/cancel/i.test(String(e && e.message))) hint.textContent = "Couldn’t get that photo."; }
-        } else {
-          $("#avatarIn").click();
-        }
-      });
-      $("#avatarIn").addEventListener("change", async e => {
-        const f = e.target.files && e.target.files[0]; if (!f) return;
-        try { const compressed = await compress(f); await saveAvatar(compressed); }
-        catch (err) { $("#avatarHint").textContent = err.message || "That photo couldn’t be used."; }
-        e.target.value = "";
-      });
-      const avatarRemove = $("#avatarRemoveBtn");
-      if (avatarRemove) avatarRemove.addEventListener("click", async () => {
-        try { await fbStorage.ref(`users/${cloudUser.uid}/avatar.jpg`).delete(); } catch (e) {}
-        settings.avatarUrl = ""; saveSettings(); await cloudPushSettings();
-        toast("Profile picture removed"); openSettings();
-      });
-      $("#acctSaveBtn").addEventListener("click", async () => {
-        settings.firstName = properCase($("#s-fname").value);
-        settings.lastName = properCase($("#s-lname").value);
-        settings.phone = $("#s-phone").value.trim();
-        saveSettings();
-        const hint = $("#acctHint"); hint.textContent = "Saving…";
-        try { await cloudPushSettings(); hint.textContent = "Saved."; toast("Account details saved"); }
-        catch (e) { hint.textContent = "Saved here, but couldn’t sync."; }
-      });
-      $("#acctResetBtn").addEventListener("click", async () => {
-        const hint = $("#acctResetHint"); hint.textContent = "Sending…";
-        try { await cloudResetPassword(cloudUser.email); hint.textContent = "Check your email for a reset link."; }
-        catch (e) { hint.textContent = "Couldn’t send: " + authErrorMsg(e); }
-      });
-    }
-  } else if (settingsTab === "general") {
+function openSettings() {
+  const tabs = [["general", "General"], ["api", "API"]];
+  if (!tabs.some(([k]) => k === settingsTab)) settingsTab = "general";
+  const tabBody = settingsTab === "api" ? apiTabHtml() : generalTabHtml();
+  $("#sheetBody").innerHTML = `
+    <h2 id="sheetTitle">Settings</h2>
+    <div class="settings-tabs" id="settingsTabs" role="tablist">
+      ${tabs.map(([k, l]) => `<button type="button" class="stab" data-stab="${k}" role="tab" aria-selected="${settingsTab === k}">${esc(l)}</button>`).join("")}
+    </div>
+    <div id="settingsTabBody">${tabBody}</div>
+    <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>`;
+
+  $("#settingsTabs").addEventListener("click", e => {
+    const b = e.target.closest("[data-stab]"); if (!b || b.dataset.stab === settingsTab) return;
+    settingsTab = b.dataset.stab; openSettings();
+  });
+
+  if (settingsTab === "general") {
     const syncBtn = $("#syncBtn");
     if (syncBtn) syncBtn.addEventListener("click", () => cloudPullAll());
     $("#s-cur").addEventListener("input", e => { settings.currency = e.target.value; saveSettings(); render(); cloudPushSettings(); });
@@ -2283,7 +2304,7 @@ function openSettings() {
       ids.forEach(cloudDeleteItem);
       refreshShareIfActive();
     }));
-  } else if (settingsTab === "api" && cloudUser) {
+  } else if (settingsTab === "api") {
     $("#s-gemini").addEventListener("input", e => { settings.geminiKey = e.target.value.trim(); });
     $("#s-gemini").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#geminiSaveBtn").click(); } });
     $("#geminiSaveBtn").addEventListener("click", async () => {
@@ -2449,6 +2470,12 @@ document.querySelectorAll(".nav button").forEach(b => b.addEventListener("click"
 }));
 $("#addBtn").addEventListener("click", () => openForm(null));
 $("#settingsBtn").addEventListener("click", openSettings);
+$("#headerAvatar").addEventListener("click", () => {
+  if (cloudUser) { openAccount(); return; }
+  openPicker("Account", [["signin", "Sign in", ICONS.login], ["signup", "Create account", ICONS.userPlus]], null, v => {
+    authMode = v; openAccount();
+  });
+});
 
 /* ---------- Welcome (first launch) ---------- */
 function showWelcome() {
