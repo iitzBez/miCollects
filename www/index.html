@@ -1937,7 +1937,7 @@ async function cloudPullAll(silent) {
    document -- separate from "users/{uid}/..." so it can be made publicly readable by its exact token
    (an unguessable id) without exposing anything else. Security rules allow "get" (fetch by exact id)
    but not "list" (browse/enumerate), so a token can't be discovered, only used if you already have it. */
-const SHARE_BASE_URL = "https://iitzbez.github.io/miCollects/share.html";
+const SHARE_BASE_URL = "https://share.micollects.co.za/share.html";
 const shareUrl = token => `${SHARE_BASE_URL}?id=${token}`;
 
 /* Opens the OS share sheet (native on Android via the Share plugin, the Web Share API in a browser),
