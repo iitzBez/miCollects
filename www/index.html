@@ -279,6 +279,12 @@ input.has-marquee::placeholder{color:transparent}
   </div>
   <div class="welcome-form" id="welcomeForm" hidden>
     <h2 id="wfTitle">Sign in</h2>
+    <div class="row" id="wfNameRow" hidden>
+      <div class="field"><label for="wf-fname">Name</label>
+        <input id="wf-fname" autocomplete="given-name" placeholder="Your name"></div>
+      <div class="field"><label for="wf-lname">Surname</label>
+        <input id="wf-lname" autocomplete="family-name" placeholder="Your surname"></div>
+    </div>
     <div class="field"><label for="wf-email">Email</label>
       <input id="wf-email" name="email" type="email" autocomplete="email" placeholder="you@example.com"></div>
     <div class="field"><label for="wf-pass">Password</label>
@@ -1744,6 +1750,9 @@ const AUTH_ERRORS = {
   "auth/network-request-failed": "Couldn’t reach the server. Check your connection."
 };
 const authErrorMsg = e => AUTH_ERRORS[e && e.code] || (e && e.message) || "Something went wrong.";
+/* Always Title Case regardless of how it was typed -- "NAME", "nAME" and "name" all become "Name". */
+const properCase = s => { const t = (s || "").trim(); return t ? t[0].toUpperCase() + t.slice(1).toLowerCase() : ""; };
+
 function passwordPolicyError(pw) {
   if (pw.length < 8) return "Use at least 8 characters.";
   if (!/[0-9]/.test(pw)) return "Include at least one number.";
@@ -2064,6 +2073,12 @@ function authAreaHtml() {
   }
   const signUp = authMode === "signup";
   return `
+    ${signUp ? `<div class="row">
+      <div class="field"><label for="s-su-fname">Name</label>
+        <input id="s-su-fname" autocomplete="given-name" placeholder="Your name"></div>
+      <div class="field"><label for="s-su-lname">Surname</label>
+        <input id="s-su-lname" autocomplete="family-name" placeholder="Your surname"></div>
+    </div>` : ""}
     <div class="field"><label for="s-email">Email</label>
       <input id="s-email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com"></div>
     <div class="field"><label for="s-pass">Password</label>
@@ -2173,12 +2188,21 @@ function openSettings() {
       $("#authBackBtn").addEventListener("click", () => { authMode = null; openSettings(); });
       const authAction = async (fn, okMsg, requirePolicy) => {
         const email = $("#s-email").value.trim(), pass = $("#s-pass").value;
+        let firstName = "", lastName = "";
+        if (requirePolicy) {
+          firstName = $("#s-su-fname").value.trim(); lastName = $("#s-su-lname").value.trim();
+          if (!firstName || !lastName) { authHint.textContent = "Enter your name and surname."; return; }
+        }
         if (!email || !pass) { authHint.textContent = "Enter an email and password."; return; }
         if (!isValidEmail(email)) { authHint.textContent = "Enter a valid email address."; return; }
         if (requirePolicy) { const err = passwordPolicyError(pass); if (err) { authHint.textContent = err; return; } }
         authHint.textContent = "Working…";
         try {
           await fn(email, pass);
+          if (requirePolicy) {
+            settings.firstName = properCase(firstName); settings.lastName = properCase(lastName);
+            saveSettings(); cloudPushSettings();
+          }
           toast(okMsg); authMode = null;
           state.tab = "owned"; closeSheet(); render();
         } catch (e) { authHint.textContent = authErrorMsg(e); }
@@ -2228,8 +2252,8 @@ function openSettings() {
         toast("Profile picture removed"); openSettings();
       });
       $("#acctSaveBtn").addEventListener("click", async () => {
-        settings.firstName = $("#s-fname").value.trim();
-        settings.lastName = $("#s-lname").value.trim();
+        settings.firstName = properCase($("#s-fname").value);
+        settings.lastName = properCase($("#s-lname").value);
         settings.phone = $("#s-phone").value.trim();
         saveSettings();
         const hint = $("#acctHint"); hint.textContent = "Saving…";
@@ -2463,15 +2487,27 @@ function openWelcomeForm(mode) {
   $("#wfTitle").textContent = mode === "signin" ? "Sign in" : "Create account";
   $("#wfSubmit").textContent = mode === "signin" ? "Sign in" : "Create account";
   $("#wfForgot").hidden = mode !== "signin";
+  $("#wfNameRow").hidden = mode !== "signup";
   $("#wfSubmit").onclick = async () => {
     const email = $("#wf-email").value.trim(), pass = $("#wf-pass").value;
     const hint = $("#wfHint");
+    let firstName = "", lastName = "";
+    if (mode === "signup") {
+      firstName = $("#wf-fname").value.trim(); lastName = $("#wf-lname").value.trim();
+      if (!firstName || !lastName) { hint.textContent = "Enter your name and surname."; return; }
+    }
     if (!email || !pass) { hint.textContent = "Enter an email and password."; return; }
     if (!isValidEmail(email)) { hint.textContent = "Enter a valid email address."; return; }
     if (mode === "signup") { const err = passwordPolicyError(pass); if (err) { hint.textContent = err; return; } }
     hint.textContent = "Working…";
-    try { await (mode === "signin" ? cloudSignIn(email, pass) : cloudSignUp(email, pass)); finishWelcome(); }
-    catch (e) { hint.textContent = authErrorMsg(e); }
+    try {
+      await (mode === "signin" ? cloudSignIn(email, pass) : cloudSignUp(email, pass));
+      if (mode === "signup") {
+        settings.firstName = properCase(firstName); settings.lastName = properCase(lastName);
+        saveSettings(); cloudPushSettings();
+      }
+      finishWelcome();
+    } catch (e) { hint.textContent = authErrorMsg(e); }
   };
   $("#wfForgot").onclick = async () => {
     const email = $("#wf-email").value.trim();
