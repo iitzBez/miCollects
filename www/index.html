@@ -1421,11 +1421,16 @@ const firebaseConfig = {
   apiKey: "AIzaSyBiTKFRbf8d2npi3YOcOGM5a-8Vrjo_LXs",
   authDomain: "micollects.firebaseapp.com",
   projectId: "micollects",
-  storageBucket: "micollects.firebasestorage.app",
+  storageBucket: "micollects",
   messagingSenderId: "685369410685",
   appId: "1:685369410685:web:a7812c04ba3b2215a51d14"
 };
 const cloudEnabled = firebaseConfig.apiKey !== "PASTE_ME";
+/* Storage bucket(s) retired in past migrations -- a photo URL still pointing at one of these is dead
+   (the bucket is gone), so cloudPullAll re-uploads it fresh to the current bucket instead. Safe to
+   drop once no account has photos left on an old bucket. */
+const RETIRED_STORAGE_HOSTS = ["micollects.firebasestorage.app"];
+const isFromRetiredBucket = url => typeof url === "string" && RETIRED_STORAGE_HOSTS.some(h => url.includes(`/b/${h}/o/`));
 let cloudUser = null, appReady = false, currentScope = "local", authResolvedOnce = false, welcomeShown = false;
 let fbAuth = null, fbDb = null, fbStorage = null;
 /* Checked once, synchronously, before Firebase has had a chance to resolve the previous session --
@@ -1582,6 +1587,15 @@ async function cloudPullAll(silent) {
     } catch (e) {}
     if (!stillCurrent()) return;
     state.items = await store.all(syncUid);
+    let repaired = 0;
+    for (const it of state.items) {
+      if (!stillCurrent()) return;
+      if ((it.photos || []).length && (it.cloudPhotos || []).some(isFromRetiredBucket)) {
+        it.cloudPhotos = [];
+        try { await cloudPushItem(it); repaired++; } catch (e) {}
+      }
+    }
+    if (repaired) state.items = await store.all(syncUid);
     render();
     refreshSettingsIfOpen();
     settings.lastSynced = Date.now(); saveSettings();
