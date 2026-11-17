@@ -469,6 +469,7 @@ const state = { tab: "owned", q: "", cat: "All", pillField: "all", pillVal: "All
 let sortOptions = [], groupOptions = [];
 const PRI = { 3: "High", 2: "Medium", 1: "Low" };
 const CONDITIONS = ["", "Sealed / new in box", "Mint", "Near mint", "Excellent", "Good", "Fair", "Poor"];
+const RARITIES = ["", "Common", "Uncommon", "Rare", "Ultra rare", "One of a kind"];
 const CHEVRON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
 const STAR_PATH_D = "m12 3 2.9 5.88 6.49.94-4.7 4.58 1.11 6.47L12 17.77l-5.8 3.05 1.11-6.47-4.7-4.58 6.49-.94Z";
 /* "full" >= this star's number, "half" >= half a star short of it, else "empty". */
@@ -520,7 +521,8 @@ const ICONS = {
   fair: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/></svg>`,
   poor: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.7a2 2 0 0 0-2 1.7l-1.4 9A2 2 0 0 0 4.3 15z"/><path d="M17 13h4V3h-4z"/></svg>`,
   camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3.5"/></svg>`,
-  gallery: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>`
+  gallery: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>`,
+  rarity: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 12L2 9Z"/><path d="M11 3 8 9l4 12 4-12-3-6"/><path d="M2 9h20"/></svg>`
 };
 const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed, "Mint": ICONS.layers, "Near mint": ICONS.layers, "Excellent": ICONS.excellent, "Good": ICONS.good, "Fair": ICONS.fair, "Poor": ICONS.poor };
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
@@ -566,12 +568,12 @@ function card(i) {
     </div></div>`;
 }
 
-const UNGROUPED = /^(uncategorised|no brand|no series|no scale|not set)$/i;
+const UNGROUPED = /^(uncategorised|no brand|no series|no size|not set)$/i;
 function groupLabel(i, g) {
   if (g === "category") return i.category || "Uncategorised";
   if (g === "brand") return i.brand || "No brand";
   if (g === "series") return i.series || "No series";
-  if (g === "scale") return i.scale || "No scale";
+  if (g === "scale") return i.scale || "No size";
   if (g === "condition") return i.condition || "Not set";
   if (g === "priority") return PRI[i.priority || 2] || "Medium";
   if (g === "name") { const c = (String(i.name || "").trim()[0] || "").toUpperCase(); return /[A-Z]/.test(c) ? c : "#"; }
@@ -637,7 +639,7 @@ function render() {
     : [["priority", "Priority", ICONS.priority], ["recent", "Recent", ICONS.recent], ["name", "Name", ICONS.name], ["value", "Price", ICONS.value]];
   if (!sortOptions.some(s => s[0] === state.sort)) state.sort = sortOptions[0][0];
 
-  groupOptions = [["none", "Don’t group", ICONS.none], ["category", "Category", ICONS.category], ["brand", "Brand", ICONS.brand], ["series", "Series", ICONS.series], ["scale", "Scale", ICONS.scale],
+  groupOptions = [["none", "Don’t group", ICONS.none], ["category", "Category", ICONS.category], ["brand", "Brand", ICONS.brand], ["series", "Series", ICONS.series], ["scale", "Size", ICONS.scale],
     owned ? ["condition", "Condition", ICONS.condition] : ["priority", "Priority", ICONS.priority], ["name", "Name (A–Z)", ICONS.name]];
   if (!groupOptions.some(g => g[0] === state.group)) state.group = "none";
 
@@ -1282,6 +1284,7 @@ function openForm(item, convertTo) {
   const seriesList = [...new Set(state.items.map(i => i.series).filter(Boolean))].sort();
   const brands = [...new Set(state.items.map(i => i.brand).filter(Boolean))].sort();
   const scales = [...new Set(state.items.map(i => i.scale).filter(Boolean))].sort();
+  const colors = [...new Set(state.items.map(i => i.color).filter(Boolean))].sort();
   const cur = esc(settings.currency);
   const val = v => esc(v ?? "");
   const title = convertTo === "owned" ? "Add to collection" : convertTo === "wish" ? "Move to wishlist"
@@ -1334,20 +1337,29 @@ function openForm(item, convertTo) {
       <div class="field"><label for="f-brand">Brand</label>
         <input id="f-brand" value="${val(it.brand)}" placeholder="e.g. Funko, LEGO, Hot Wheels" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list">
         <ul class="ac-list" id="brandSuggest" hidden></ul></div>
-      <div class="field"><label for="f-scale">Scale</label>
-        <input id="f-scale" value="${val(it.scale)}" placeholder="e.g. 1:18, 1/6" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list">
+      <div class="field"><label for="f-scale">Size</label>
+        <input id="f-scale" value="${val(it.scale)}" placeholder="Scale, size, no. of pieces, etc." autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list">
         <ul class="ac-list" id="scaleSuggest" hidden></ul></div>
     </div>
-    <div class="field"><label>Rating</label>${starsHtml("f-rating", it.rating)}</div>
-    ${owned ? `
+    <div class="row">
+      <div class="field"><label for="f-color">Color</label>
+        <input id="f-color" value="${val(it.color)}" placeholder="e.g. Red, gold, clear" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list">
+        <ul class="ac-list" id="colorSuggest" hidden></ul></div>
+      <div class="field"><label for="f-rarity">Rarity</label>
+        <button type="button" class="select-btn" id="f-rarity" value="${esc(it.rarity || "")}"><span>${esc(it.rarity || "Not set")}</span>${CHEVRON_SVG}</button></div>
+    </div>
     <div class="row">
       <div class="field"><label for="f-cond">Condition</label>
         <button type="button" class="select-btn" id="f-cond" value="${esc(it.condition || "")}"><span>${esc(it.condition || "Not set")}</span>${CHEVRON_SVG}</button></div>
+      <div class="field"><label>Rating</label>${starsHtml("f-rating", it.rating)}</div>
+    </div>
+    ${owned ? `
+    <div class="row">
       <div class="field"><label for="f-qty">Quantity</label>
         <input id="f-qty" type="number" inputmode="numeric" min="1" step="1" value="${val(it.qty || 1)}"></div>
+      <div class="field"><label for="f-purchdate">Purchase date</label>
+        <input id="f-purchdate" type="date" value="${val(it.purchaseDate)}"></div>
     </div>
-    <div class="field"><label for="f-purchdate">Purchase date</label>
-      <input id="f-purchdate" type="date" value="${val(it.purchaseDate)}"></div>
     <div class="row">
       <div class="field"><label for="f-paid">Price paid (${cur})</label>
         <input id="f-paid" type="number" inputmode="decimal" min="0" step="any" value="${val(it.paid)}"></div>
@@ -1436,11 +1448,16 @@ function openForm(item, convertTo) {
   wireSuggest("f-series", "seriesSuggest", seriesList);
   wireSuggest("f-brand", "brandSuggest", brands);
   wireSuggest("f-scale", "scaleSuggest", scales);
+  wireSuggest("f-color", "colorSuggest", colors);
   wireStars("f-rating");
 
   const condBtn = $("#f-cond");
   if (condBtn) condBtn.addEventListener("click", () => openPicker("Condition", CONDITIONS.map(c => [c, c || "Not set", CONDITION_ICONS[c]]), condBtn.value, v => {
     condBtn.value = v; condBtn.querySelector("span").textContent = v || "Not set";
+  }));
+  const rarityBtn = $("#f-rarity");
+  if (rarityBtn) rarityBtn.addEventListener("click", () => openPicker("Rarity", RARITIES.map(r => [r, r || "Not set", ICONS.rarity]), rarityBtn.value, v => {
+    rarityBtn.value = v; rarityBtn.querySelector("span").textContent = v || "Not set";
   }));
   const priBtn = $("#f-pri");
   if (priBtn) priBtn.addEventListener("click", () => openPicker("Priority", [3, 2, 1].map(p => [p, PRI[p], ICONS.priority]), priBtn.value, v => {
@@ -1488,11 +1505,11 @@ async function save() {
   const num = x => x === "" ? null : Math.max(0, Number(x));
   const name = v("f-name");
   if (!name) { $("#f-name").focus(); toast("Give it a name first"); return; }
-  Object.assign(it, { name, category: v("f-cat"), series: v("f-series"), brand: v("f-brand"), scale: v("f-scale"), description: v("f-desc"),
+  Object.assign(it, { name, category: v("f-cat"), series: v("f-series"), brand: v("f-brand"), scale: v("f-scale"), color: v("f-color"), description: v("f-desc"),
     url: normUrl(v("f-url")), productUrl: normUrl(v("f-producturl")), notes: v("f-notes"), photos: photos.slice(), photo: photos[0] || null, updated: Date.now(),
-    rating: +$("#f-rating").dataset.value || 0, scope: it.scope || currentScope });
+    rating: +$("#f-rating").dataset.value || 0, condition: v("f-cond"), rarity: v("f-rarity"), scope: it.scope || currentScope });
   if (it.list === "owned") {
-    Object.assign(it, { condition: v("f-cond"), qty: Math.max(1, parseInt(v("f-qty"), 10) || 1), paid: num(v("f-paid")), value: num(v("f-value")), purchaseDate: v("f-purchdate") || null, buildHours: num(v("f-buildh")), buildMinutes: num(v("f-buildm")) });
+    Object.assign(it, { qty: Math.max(1, parseInt(v("f-qty"), 10) || 1), paid: num(v("f-paid")), value: num(v("f-value")), purchaseDate: v("f-purchdate") || null, buildHours: num(v("f-buildh")), buildMinutes: num(v("f-buildm")) });
   } else {
     Object.assign(it, { target: num(v("f-target")), priority: +v("f-pri") || 2 });
   }
@@ -1532,7 +1549,7 @@ function openBulkUpdate() {
       <div class="field"><label for="bu-brand">Brand</label>
         <input id="bu-brand" placeholder="No change" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list">
         <ul class="ac-list" id="buBrandSuggest" hidden></ul></div>
-      <div class="field"><label for="bu-scale">Scale</label>
+      <div class="field"><label for="bu-scale">Size</label>
         <input id="bu-scale" placeholder="No change" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list">
         <ul class="ac-list" id="buScaleSuggest" hidden></ul></div>
     </div>
