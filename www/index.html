@@ -50,6 +50,10 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .header-avatar{width:44px;height:44px;padding:0;border-radius:50%;border:1px solid var(--line);background:var(--sunk);display:grid;place-items:center;overflow:hidden;flex:none;cursor:pointer;font:700 16px/1 var(--display);color:var(--muted)}
 .header-avatar img{width:100%;height:100%;object-fit:cover}
 .header-avatar svg{width:22px;height:22px}
+.ptr-indicator{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 0;background:var(--surface);border-bottom:1px solid var(--line);font-size:13px;font-weight:650;color:var(--muted);z-index:25;opacity:0;transform:translateY(-12px);pointer-events:none}
+.ptr-indicator.ptr-ready{color:var(--brass)}
+.ptr-spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--brass);flex:none}
+@keyframes ptr-spin{to{transform:rotate(360deg)}}
 @keyframes login-dot-pop{0%,100%{opacity:.15;transform:scale(.5)}40%,60%{opacity:1;transform:scale(1)}}
 .icon-anim-login .login-dot{animation:login-dot-pop 1.6s ease-in-out infinite;transform-origin:center;transform-box:fill-box}
 .icon-anim-login .login-dot-2{animation-delay:.15s}
@@ -272,6 +276,11 @@ input.has-marquee::placeholder{color:transparent}
 </head>
 <body>
 
+<div class="ptr-indicator" id="ptrIndicator" aria-hidden="true" hidden>
+  <div class="ptr-spin"></div>
+  <span id="ptrLabel">Pull to sync</span>
+</div>
+
 <div class="welcome" id="welcome">
   <p class="welcome-logo">mi<span>Collects</span></p>
   <div class="welcome-choices" id="welcomeChoices" hidden>
@@ -287,9 +296,9 @@ input.has-marquee::placeholder{color:transparent}
     <h2 id="wfTitle">Sign in</h2>
     <div class="row" id="wfNameRow" hidden>
       <div class="field"><label for="wf-fname">Name</label>
-        <input id="wf-fname" autocomplete="given-name" placeholder="Your name"></div>
+        <input id="wf-fname" autocomplete="given-name" placeholder="Name"></div>
       <div class="field"><label for="wf-lname">Surname</label>
-        <input id="wf-lname" autocomplete="family-name" placeholder="Your surname"></div>
+        <input id="wf-lname" autocomplete="family-name" placeholder="Surname"></div>
     </div>
     <div class="field"><label for="wf-email">Email</label>
       <input id="wf-email" name="email" type="email" autocomplete="email" placeholder="you@example.com"></div>
@@ -2088,9 +2097,9 @@ function authAreaHtml() {
   return `
     ${signUp ? `<div class="row">
       <div class="field"><label for="s-su-fname">Name</label>
-        <input id="s-su-fname" autocomplete="given-name" placeholder="Your name"></div>
+        <input id="s-su-fname" autocomplete="given-name" placeholder="Name"></div>
       <div class="field"><label for="s-su-lname">Surname</label>
-        <input id="s-su-lname" autocomplete="family-name" placeholder="Your surname"></div>
+        <input id="s-su-lname" autocomplete="family-name" placeholder="Surname"></div>
     </div>` : ""}
     <div class="field"><label for="s-email">Email</label>
       <input id="s-email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com"></div>
@@ -2476,6 +2485,54 @@ $("#headerAvatar").addEventListener("click", () => {
     authMode = v; openAccount();
   });
 });
+
+/* ---------- Pull to sync ---------- */
+/* Anywhere on the home screen (either tab), dragging down while already scrolled to the top pulls
+   in a "Pull to sync"/"Release to sync" indicator and triggers a sync on release -- cloudPullAll()
+   already shows its own "Syncing…"/"Already syncing…"/completion toasts, so this only needs to
+   detect the gesture and show the indicator while it's in progress. Purely additive (no
+   preventDefault/stopPropagation), so it never interferes with taps or the grid's own long-press-
+   to-select tracking. */
+let ptrStartY = null, ptrActive = false;
+const PTR_THRESHOLD = 70;
+const ptrAtTop = () => (document.scrollingElement || document.documentElement).scrollTop <= 0;
+const ptrBlocked = () => sheetOpen || pickerOpen || state.selecting || !$("#welcome").hidden;
+function ptrSetProgress(dy) {
+  const el = $("#ptrIndicator");
+  el.hidden = false;
+  const p = Math.min(1, dy / PTR_THRESHOLD);
+  el.style.opacity = p;
+  el.style.transform = `translateY(${-12 + 12 * p}px)`;
+  const ready = dy >= PTR_THRESHOLD;
+  el.classList.toggle("ptr-ready", ready);
+  $("#ptrLabel").textContent = ready ? "Release to sync" : "Pull to sync";
+}
+function ptrReset() {
+  const el = $("#ptrIndicator");
+  el.classList.remove("ptr-ready");
+  el.style.opacity = ""; el.style.transform = ""; el.hidden = true;
+  $("#ptrLabel").textContent = "Pull to sync";
+}
+document.addEventListener("pointerdown", e => {
+  ptrStartY = (!ptrBlocked() && ptrAtTop()) ? e.clientY : null;
+  ptrActive = false;
+}, { passive: true });
+document.addEventListener("pointermove", e => {
+  if (ptrStartY == null) return;
+  const dy = e.clientY - ptrStartY;
+  if (dy <= 0 || ptrBlocked() || !ptrAtTop()) { if (ptrActive) ptrReset(); ptrStartY = null; ptrActive = false; return; }
+  ptrActive = true;
+  ptrSetProgress(dy);
+}, { passive: true });
+document.addEventListener("pointerup", () => {
+  if (!ptrActive) { ptrStartY = null; return; }
+  const ready = $("#ptrIndicator").classList.contains("ptr-ready");
+  ptrReset(); ptrStartY = null; ptrActive = false;
+  if (!ready) return;
+  if (!cloudUser) { toast("Sign in to sync your collection"); return; }
+  cloudPullAll();
+});
+document.addEventListener("pointercancel", () => { ptrReset(); ptrStartY = null; ptrActive = false; });
 
 /* ---------- Welcome (first launch) ---------- */
 function showWelcome() {
