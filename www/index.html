@@ -65,7 +65,6 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 .lbtn[aria-pressed="true"]{background:var(--brass);border-color:var(--brass);color:var(--brass-ink)}
 .lbtn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
 .lbtn.danger:disabled{opacity:.4;pointer-events:none}
-#shareSelectBtn{margin-left:auto;background:var(--brass);border-color:var(--brass);color:var(--brass-ink)}
 #signOutBtn{margin-left:auto}
 .select-bar{display:flex;align-items:center;gap:10px;padding:6px 16px 10px;max-width:1100px;margin:0 auto;flex-wrap:wrap}
 .select-bar .select-count{color:var(--muted);font-size:14px;flex:1}
@@ -305,8 +304,6 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
     <svg viewBox="0 0 24 24" fill="currentColor"><rect x="2.5" y="5" width="5.3" height="14" rx="1.2"/><rect x="9.3" y="5" width="5.3" height="14" rx="1.2"/><rect x="16.2" y="5" width="5.3" height="14" rx="1.2"/></svg></button>
   <button class="lbtn" type="button" data-layout="list" aria-label="List view" aria-pressed="false">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="6" height="6" rx="1"/><line x1="11" y1="8" x2="21" y2="8"/><rect x="3" y="14" width="6" height="6" rx="1"/><line x1="11" y1="17" x2="21" y2="17"/></svg></button>
-  <button class="lbtn" type="button" id="shareSelectBtn" aria-label="Share wishlist items" hidden>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="10.51" x2="15.42" y2="6.49"/><line x1="8.59" y1="13.49" x2="15.42" y2="17.51"/></svg></button>
 </div>
 <div class="select-bar" id="selectBar" hidden>
   <button type="button" class="btn ghost" id="selectAllBtn">Select all</button>
@@ -455,7 +452,7 @@ const LAYOUTS = ["grid1", "grid2", "grid3", "list"];
 if (!LAYOUTS.includes(settings.layout)) settings.layout = "grid2";
 
 /* ---------- State ---------- */
-const state = { tab: "owned", q: "", cat: "All", pillField: "all", pillVal: "All", sort: "recent", group: "none", layout: settings.layout, items: [], selecting: false, selectMode: null, selected: new Set() };
+const state = { tab: "owned", q: "", cat: "All", pillField: "all", pillVal: "All", sort: "recent", group: "none", layout: settings.layout, items: [], selecting: false, selected: new Set() };
 let sortOptions = [], groupOptions = [];
 const PRI = { 3: "High", 2: "Medium", 1: "Low" };
 const CONDITIONS = ["", "Sealed / new in box", "Mint", "Near mint", "Excellent", "Good", "Fair", "Poor"];
@@ -559,9 +556,7 @@ function render() {
 
   if (state.selecting) for (const id of [...state.selected]) if (!tabItems.some(i => i.id === id)) state.selected.delete(id);
   const canBulkShare = cloudEnabled && !!cloudUser;
-  $("#shareSelectBtn").hidden = !canBulkShare;
-  $("#selectShareBtn").hidden = state.selectMode !== "share";
-  $("#selectDeleteBtn").hidden = state.selectMode !== "delete";
+  $("#selectShareBtn").hidden = !canBulkShare;
   $("#layoutBar").hidden = state.selecting;
   $("#selectBar").hidden = !state.selecting;
 
@@ -666,19 +661,20 @@ function closeSheet() {
   try { if (history.state && history.state.sheet) { suppressNextPopstate = true; history.back(); } } catch (e) {}
 }
 
-/* Multi-select (long-press or the Share icon) also pushes a history entry on entry, the same way
-   showSheet() does -- so the hardware/gesture back button exits it instead of closing the app, with
-   no on-screen Cancel button needed. exitSelectModeAndPop() is for exiting programmatically (e.g.
-   after a successful delete/share): it resets state AND consumes the pushed entry via history.back()
-   so the stack stays balanced either way the mode gets exited. */
-function enterSelectMode(mode, ids) {
-  state.selecting = true; state.selectMode = mode; state.selected = new Set(ids || []);
+/* Multi-select (long-press only) also pushes a history entry on entry, the same way showSheet()
+   does -- so the hardware/gesture back button exits it instead of closing the app, with no
+   on-screen Cancel button needed. Share and Delete are both available at once, side by side, once
+   in this mode -- there's no separate mode per action. exitSelectModeAndPop() is for exiting
+   programmatically (e.g. after a successful delete/share): it resets state AND consumes the pushed
+   entry via history.back() so the stack stays balanced either way the mode gets exited. */
+function enterSelectMode(ids) {
+  state.selecting = true; state.selected = new Set(ids || []);
   try { history.pushState({ select: 1 }, ""); } catch (e) {}
   render();
 }
 function exitSelectMode() {
   if (!state.selecting) return;
-  state.selecting = false; state.selectMode = null; state.selected = new Set();
+  state.selecting = false; state.selected = new Set();
   render();
 }
 function exitSelectModeAndPop() {
@@ -2055,10 +2051,10 @@ async function importBackup(e) {
 }
 
 /* ---------- Events ---------- */
-/* Long-press (hold ~500ms without moving) on a card enters the same multi-select mode the Share
-   icon triggers, with that card pre-selected -- works for both deleting and sharing, on either tab.
-   A synthetic "click" still fires on release after a long-press in most browsers; longPressFired
-   lets the click handler below swallow that one so it doesn't also open the item. */
+/* Long-press (hold ~500ms without moving) on a card enters multi-select mode with that card
+   pre-selected -- Share and Delete are both available from there, on either tab. A synthetic
+   "click" still fires on release after a long-press in most browsers; longPressFired lets the
+   click handler below swallow that one so it doesn't also open the item. */
 let pressTimer = null, longPressFired = false, pressStart = null;
 const LONG_PRESS_MS = 500, MOVE_CANCEL_PX = 10;
 function cancelLongPress() { clearTimeout(pressTimer); pressTimer = null; pressStart = null; }
@@ -2068,7 +2064,7 @@ $("#grid").addEventListener("pointerdown", e => {
   pressStart = { x: e.clientX, y: e.clientY };
   pressTimer = setTimeout(() => {
     longPressFired = true;
-    enterSelectMode("delete", [c.dataset.id]);
+    enterSelectMode([c.dataset.id]);
     if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
   }, LONG_PRESS_MS);
 });
@@ -2111,7 +2107,6 @@ $("#groupBtn").addEventListener("click", () => openPicker("Group by", groupOptio
 $("#layoutBar").addEventListener("click", e => {
   const b = e.target.closest("[data-layout]");
   if (b) { state.layout = settings.layout = b.dataset.layout; saveSettings(); render(); cloudPushSettings(); return; }
-  if (e.target.closest("#shareSelectBtn")) enterSelectMode("share");
 });
 $("#selectAllBtn").addEventListener("click", () => {
   const visIds = visible().map(i => i.id);
