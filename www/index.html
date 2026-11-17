@@ -485,7 +485,9 @@ const ICONS = {
   excellent: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 15 9l7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></svg>`,
   good: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.3a2 2 0 0 0 2-1.7l1.4-9A2 2 0 0 0 19.7 9z"/><path d="M7 11H3v10h4z"/></svg>`,
   fair: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/></svg>`,
-  poor: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.7a2 2 0 0 0-2 1.7l-1.4 9A2 2 0 0 0 4.3 15z"/><path d="M17 13h4V3h-4z"/></svg>`
+  poor: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.7a2 2 0 0 0-2 1.7l-1.4 9A2 2 0 0 0 4.3 15z"/><path d="M17 13h4V3h-4z"/></svg>`,
+  camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3.5"/></svg>`,
+  gallery: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>`
 };
 const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed, "Mint": ICONS.layers, "Near mint": ICONS.layers, "Excellent": ICONS.excellent, "Good": ICONS.good, "Fair": ICONS.fair, "Poor": ICONS.poor };
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
@@ -696,7 +698,12 @@ function exitSelectModeAndPop() {
    string. A generic dot icon is used for any option that doesn't supply its own. */
 const PICKER_DEFAULT_ICON = `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg>`;
 let pickerOpen = false;
-function openPicker(title, options, selectedValue, onSelect) {
+let pickerOnCancel = null;
+/* onCancel (optional, 5th arg) fires once if the picker is dismissed without a selection -- via the
+   scrim or the back button -- for callers like pickPhotoSource() below that need to know "nothing
+   was chosen" rather than just leaving a setting unchanged. */
+function openPicker(title, options, selectedValue, onSelect, onCancel) {
+  pickerOnCancel = onCancel || null;
   $("#pickerTitle").textContent = title;
   $("#pickerOptions").innerHTML = options.map(([v, l, icon]) => `
     <button type="button" class="picker-opt" role="radio" aria-checked="${String(v) === String(selectedValue)}" data-value="${esc(v)}">
@@ -706,6 +713,7 @@ function openPicker(title, options, selectedValue, onSelect) {
     </button>`).join("");
   $("#pickerOptions").onclick = e => {
     const b = e.target.closest(".picker-opt"); if (!b) return;
+    pickerOnCancel = null;
     closePicker();
     onSelect(b.dataset.value);
   };
@@ -715,6 +723,7 @@ function openPicker(title, options, selectedValue, onSelect) {
 function hidePicker() {
   $("#pickerScrim").hidden = true; $("#pickerSheetEl").hidden = true;
   pickerOpen = false;
+  if (pickerOnCancel) { const cb = pickerOnCancel; pickerOnCancel = null; cb(); }
 }
 function closePicker() {
   if (!pickerOpen) return;
@@ -905,6 +914,19 @@ async function recognizePhotos(base64s) {
 
 /* One photo per tap (cover photo first, then back/price-tag shots appended), up to CAM_MAX;
    recognition runs on demand across every photo taken in this batch. */
+/* Capacitor's Camera.getPhoto({source:"PROMPT"}) shows its own native "Photo / From Photos / Take
+   Picture" action sheet -- OS chrome, not page content, so (like the native <select> pickers
+   replaced elsewhere) it can't be restyled. This asks with our own picker sheet instead, then
+   calls getPhoto with an explicit source so the native prompt never appears. Resolves to "CAMERA"
+   or "PHOTOS", or null if dismissed without a choice. */
+function pickPhotoSource() {
+  return new Promise(resolve => {
+    openPicker("Add a photo", [
+      ["CAMERA", "Take a photo", ICONS.camera],
+      ["PHOTOS", "Choose from gallery", ICONS.gallery]
+    ], null, resolve, () => resolve(null));
+  });
+}
 function wireCamera(it, paintPhotos, dup) {
   const camBatch = [];
   const btn = $("#camBtn"), doneBtn = $("#camDoneBtn"), hint = $("#camHint");
@@ -913,9 +935,11 @@ function wireCamera(it, paintPhotos, dup) {
   btn.addEventListener("click", async () => {
     const P = window.Capacitor && window.Capacitor.Plugins;
     if (!P || !P.Camera) { show("Adding a photo only works in the Android app, not this preview."); return; }
+    const source = await pickPhotoSource();
+    if (!source) return;
     btn.disabled = true;
     try {
-      const shot = await P.Camera.getPhoto({ quality: 80, resultType: "base64", source: "PROMPT", saveToGallery: false });
+      const shot = await P.Camera.getPhoto({ quality: 80, resultType: "base64", source, saveToGallery: false });
       if (!shot || !shot.base64String) return;
       let compressed;
       try { compressed = await compressSrc(`data:image/${shot.format || "jpeg"};base64,${shot.base64String}`); }
@@ -2012,8 +2036,10 @@ function openSettings() {
         const hint = $("#avatarHint");
         const P = window.Capacitor && window.Capacitor.Plugins;
         if (P && P.Camera) {
+          const source = await pickPhotoSource();
+          if (!source) return;
           try {
-            const shot = await P.Camera.getPhoto({ quality: 80, resultType: "base64", source: "PROMPT", saveToGallery: false });
+            const shot = await P.Camera.getPhoto({ quality: 80, resultType: "base64", source, saveToGallery: false });
             if (!shot || !shot.base64String) return;
             const compressed = await compressSrc(`data:image/${shot.format || "jpeg"};base64,${shot.base64String}`);
             await saveAvatar(compressed);
