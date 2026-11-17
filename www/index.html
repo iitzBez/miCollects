@@ -176,7 +176,11 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 @keyframes up{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){.sheet{animation:none}}
 .grab{width:40px;height:4px;border-radius:2px;background:var(--line);margin:4px auto 12px}
-.picker-sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:420px;max-height:80vh;max-height:80dvh;overflow-y:auto;background:var(--surface);border-radius:20px 20px 0 0;padding:8px 10px calc(20px + env(safe-area-inset-bottom,0px));z-index:11;animation:up .22s ease-out}
+/* Higher than .sheet (11), not just .scrim's shared default (10) -- a picker (e.g. Theme, Condition,
+   "Show on") is often opened from within an already-open sheet, which otherwise sat visually above
+   this scrim and silently absorbed the "tap outside to close" click before it ever reached it. */
+#pickerScrim{z-index:12}
+.picker-sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:420px;max-height:80vh;max-height:80dvh;overflow-y:auto;background:var(--surface);border-radius:20px 20px 0 0;padding:8px 10px calc(20px + env(safe-area-inset-bottom,0px));z-index:13;animation:up .22s ease-out}
 @media (prefers-reduced-motion:reduce){.picker-sheet{animation:none}}
 .picker-sheet h2{font:700 18px/1.3 var(--display);letter-spacing:-.01em;margin:0 8px 8px;padding:0 0 14px;border-bottom:1px solid var(--line)}
 .picker-opt{display:flex;align-items:center;gap:12px;width:100%;padding:12px 10px;border:0;background:none;border-radius:14px;font-size:15px;font-weight:650;color:var(--ink);text-align:left;cursor:pointer;margin-bottom:4px;transition:background .15s}
@@ -214,6 +218,13 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 .lv-chip{display:inline-flex;align-items:center;gap:6px;background:var(--sunk);border:1px solid var(--line);border-radius:999px;padding:6px 6px 6px 12px;font-size:13px;font-weight:600}
 .lv-x{all:unset;cursor:pointer;flex:none;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;color:var(--muted);font-size:13px;line-height:1}
 .lv-x:hover{background:var(--line);color:var(--ink)}
+.cf-list{display:flex;flex-direction:column;gap:8px;margin:8px 0 14px}
+.cf-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--sunk);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.cf-row-main{display:flex;flex-direction:column;gap:2px;min-width:0}
+.cf-row-label{font-weight:650;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cf-row-scope{font-size:12px;color:var(--muted)}
+.cf-x{all:unset;cursor:pointer;flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;color:var(--muted);font-size:16px;line-height:1}
+.cf-x:hover{background:var(--line);color:var(--ink)}
 .clearable{position:relative}
 /* Standardized so every placeholder (native or the marquee overlay below) uses the same muted
    token -- without this, native placeholders fall back to the browser's own default gray, which
@@ -470,7 +481,7 @@ const store = {
 };
 
 const settings = { currency: "R", layout: "grid2", sort: "recent", group: "none", geminiKey: "", onboarded: false, lastSynced: null, wishlistShareToken: null,
-  firstName: "", lastName: "", phone: "", avatarUrl: "", theme: "system", whatsNewSeenVersion: "", predefinedValues: {} };
+  firstName: "", lastName: "", phone: "", avatarUrl: "", theme: "system", whatsNewSeenVersion: "", predefinedValues: {}, customFields: [] };
 function timeAgo(ts) {
   if (!ts) return "";
   const s = Math.max(1, Math.round((Date.now() - ts) / 1000));
@@ -615,8 +626,12 @@ const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed,
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.3.1";
+const APP_VERSION = "1.4.0";
 const WHATS_NEW = [
+  { version: "1.4.0", date: "17 Nov 2026", items: [
+    "Added custom fields (Settings > Fields) — your own text fields with your own title, shown on the item form for Collection, Wishlist, or both.",
+    "Fixed a popup sometimes only closable with the back button — tapping outside it now always closes it, even when opened from inside another screen like Settings."
+  ] },
   { version: "1.3.1", date: "17 Nov 2026", items: [
     "Fixed Amazon links adding no photo — Amazon's pages don't expose one the normal way on any device.",
     "Fixed Checkers links sometimes adding an extra, unrelated photo alongside the real product photos.",
@@ -1519,6 +1534,7 @@ function openForm(item, convertTo) {
   const title = convertTo === "owned" ? "Add to collection" : convertTo === "wish" ? "Move to wishlist"
     : isNew ? (owned ? "New collection item" : "New wishlist item") : "Edit item";
   const canItemShare = !isNew && !convert && cloudEnabled && !!cloudUser;
+  const customFields = (settings.customFields || []).filter(f => f.scope === "both" || f.scope === it.list);
 
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">${title}</h2>
@@ -1611,6 +1627,9 @@ function openForm(item, convertTo) {
       <textarea id="f-desc" rows="3" placeholder="What it is, edition, size, features…">${val(it.description)}</textarea></div>
     <div class="field"><label for="f-notes">Notes</label>
       <textarea id="f-notes" rows="3" placeholder="${owned ? "Where you got it, edition, serial number…" : "Where to find it, sellers, what to look out for…"}">${val(it.notes)}</textarea></div>
+    ${customFields.map(f => `
+    <div class="field"><label for="cf-${f.id}">${esc(f.label)}</label>
+      <input id="cf-${f.id}" data-cfid="${f.id}" value="${val(it.custom && it.custom[f.id])}" autocomplete="off"></div>`).join("")}
     <div class="actions">
       <button class="btn primary" id="saveBtn">${convertTo === "owned" ? "Add to collection" : convertTo === "wish" ? "Move to wishlist" : "Save"}</button>
       <button class="btn ghost" id="cancelBtn">Cancel</button>
@@ -1768,6 +1787,10 @@ async function save() {
   } else {
     Object.assign(it, { target: num(v("f-target")), priority: +v("f-pri") || 2 });
   }
+  // Only the custom fields actually rendered for this item's list (see customFields in openForm) --
+  // any value already stored under a field that's since been rescoped or deleted is left untouched.
+  it.custom = it.custom || {};
+  document.querySelectorAll("[data-cfid]").forEach(el => { it.custom[el.dataset.cfid] = el.value.trim(); });
   try { await store.put(it); }
   catch (e) { toast("Couldn’t save. The phone may be low on storage."); return; }
   const idx = state.items.findIndex(i => i.id === it.id);
@@ -2373,6 +2396,24 @@ function listsTabHtml() {
     }).join("");
 }
 
+const CF_SCOPE_LABEL = { owned: "Collection only", wish: "Wishlist only", both: "Both Collection and Wishlist" };
+function fieldsTabHtml() {
+  const fields = settings.customFields || [];
+  return `
+    <p class="hint">Your own text fields, shown on the item form for custom naming and values.</p>
+    <div class="cf-list">${fields.length ? fields.map(f => `
+      <div class="cf-row">
+        <div class="cf-row-main"><span class="cf-row-label">${esc(f.label)}</span><span class="cf-row-scope">${esc(CF_SCOPE_LABEL[f.scope] || CF_SCOPE_LABEL.both)}</span></div>
+        <button type="button" class="cf-x" data-del="${f.id}" aria-label="Remove ${esc(f.label)}">×</button>
+      </div>`).join("") : `<p class="hint">No custom fields yet — add one below.</p>`}</div>
+    <h3>Add a field</h3>
+    <div class="field"><label for="cf-new-label">Title</label>
+      <input id="cf-new-label" placeholder="e.g. Serial number" autocomplete="off"></div>
+    <div class="field"><label for="cf-new-scope">Show on</label>
+      <button type="button" class="select-btn" id="cf-new-scope" value="both"><span>${esc(CF_SCOPE_LABEL.both)}</span>${CHEVRON_SVG}</button></div>
+    <div class="actions"><button type="button" class="btn primary" id="cfAddBtn">Add field</button></div>`;
+}
+
 /* Reached from the header avatar/account button, not from Settings -- signing in/up, editing the
    signed-in account, and the sign-in prompt for a signed-out user all live here now. */
 function openAccount() {
@@ -2701,9 +2742,9 @@ function openWhatsNew() {
 }
 
 function openSettings() {
-  const tabs = [["general", "General"], ["lists", "Lists"], ["api", "API"]];
+  const tabs = [["general", "General"], ["lists", "Lists"], ["fields", "Fields"], ["api", "API"]];
   if (!tabs.some(([k]) => k === settingsTab)) settingsTab = "general";
-  const tabBody = settingsTab === "api" ? apiTabHtml() : settingsTab === "lists" ? listsTabHtml() : generalTabHtml();
+  const tabBody = settingsTab === "api" ? apiTabHtml() : settingsTab === "lists" ? listsTabHtml() : settingsTab === "fields" ? fieldsTabHtml() : generalTabHtml();
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">Settings</h2>
     <div class="settings-tabs" id="settingsTabs" role="tablist">
@@ -2766,6 +2807,23 @@ function openSettings() {
     PREDEFINED_FIELDS.forEach(([key]) => $("#lv-add-" + key).addEventListener("keydown", e => {
       if (e.key === "Enter") { e.preventDefault(); $(`[data-add="${key}"]`).click(); }
     }));
+  } else if (settingsTab === "fields") {
+    const scopeBtn = $("#cf-new-scope");
+    scopeBtn.addEventListener("click", () => openPicker("Show on",
+      Object.entries(CF_SCOPE_LABEL).map(([v, l]) => [v, l]), scopeBtn.value,
+      v => { scopeBtn.value = v; scopeBtn.querySelector("span").textContent = CF_SCOPE_LABEL[v]; }));
+    $("#cfAddBtn").addEventListener("click", () => {
+      const label = $("#cf-new-label").value.trim(); if (!label) return;
+      settings.customFields = settings.customFields || [];
+      settings.customFields.push({ id: uid(), label, scope: scopeBtn.value || "both" });
+      saveSettings(); cloudPushSettings(); openSettings();
+    });
+    $("#cf-new-label").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#cfAddBtn").click(); } });
+    $("#settingsTabBody").addEventListener("click", e => {
+      const x = e.target.closest(".cf-x"); if (!x) return;
+      settings.customFields = (settings.customFields || []).filter(f => f.id !== x.dataset.del);
+      saveSettings(); cloudPushSettings(); openSettings();
+    });
   }
   $("#sDone").addEventListener("click", closeSheet);
   addClearButtons($("#sheetBody"));
