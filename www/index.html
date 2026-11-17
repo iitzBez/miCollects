@@ -175,6 +175,7 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 .pw-toggle svg{width:18px;height:18px}
 .url-row .clearable{flex:1;min-width:0}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.hint.bu-intro{margin-top:16px}
 .star-rating{display:flex;gap:4px}
 .star-btn{background:none;border:0;padding:4px;margin:-4px;cursor:pointer;position:relative;display:inline-grid}
 .star-btn svg{width:28px;height:28px;display:block;stroke-linejoin:round}
@@ -538,6 +539,7 @@ function visible() {
   if (state.pillField !== "all" && state.pillVal !== "All") list = list.filter(i => pillLabel(i) === state.pillVal);
   if (q) list = list.filter(i => [i.name, i.brand, i.series, i.category, i.scale, i.description, i.notes, i.condition].join(" ").toLowerCase().includes(q));
   const by = {
+    none: () => 0,
     recent: (a, b) => (b.updated || 0) - (a.updated || 0),
     name: (a, b) => String(a.name).localeCompare(String(b.name)),
     value: (a, b) => price(b) - price(a),
@@ -612,10 +614,10 @@ function render() {
   // Three-level drill-down: pick a Category, then All/Brand/Series, then (if Brand or Series) a value.
   const cats = [...new Set(tabItems.map(i => i.category || "Uncategorised"))].sort();
   if (state.cat !== "All" && !cats.includes(state.cat)) state.cat = "All";
-  $("#catChips").innerHTML = cats.length > 1
+  $("#catChips").innerHTML = cats.length >= 1
     ? ["All", ...cats].map(c => `<button class="chip" aria-pressed="${c === state.cat}" data-cat="${esc(c)}">${c === "All" ? "All categories" : esc(c)}</button>`).join("")
     : "";
-  $("#catChips").hidden = cats.length <= 1;
+  $("#catChips").hidden = cats.length < 1;
 
   $("#pillField").innerHTML = tabItems.length
     ? ["all", "brand", "series"].map(f => `<button type="button" data-pillfield="${f}" aria-pressed="${state.pillField === f}">${f === "all" ? "All" : f === "brand" ? "Brand" : "Series"}</button>`).join("")
@@ -628,16 +630,18 @@ function render() {
     const catFiltered = state.cat === "All" ? tabItems : tabItems.filter(i => (i.category || "Uncategorised") === state.cat);
     const pillVals = [...new Set(catFiltered.map(pillLabel))].sort();
     if (state.pillVal !== "All" && !pillVals.includes(state.pillVal)) state.pillVal = "All";
-    $("#chips").innerHTML = pillVals.length > 1
+    $("#chips").innerHTML = pillVals.length >= 1
       ? ["All", ...pillVals].map(v => `<button class="chip" aria-pressed="${v === state.pillVal}" data-pillval="${esc(v)}">${esc(v)}</button>`).join("")
       : "";
-    $("#chips").hidden = pillVals.length <= 1;
+    $("#chips").hidden = pillVals.length < 1;
   }
 
   sortOptions = owned
-    ? [["recent", "Recent", ICONS.recent], ["name", "Name", ICONS.name], ["value", "Value", ICONS.value]]
-    : [["priority", "Priority", ICONS.priority], ["recent", "Recent", ICONS.recent], ["name", "Name", ICONS.name], ["value", "Price", ICONS.value]];
+    ? [["none", "No sort", ICONS.none], ["recent", "Recent", ICONS.recent], ["name", "Name", ICONS.name], ["value", "Value", ICONS.value]]
+    : [["none", "No sort", ICONS.none], ["priority", "Priority", ICONS.priority], ["recent", "Recent", ICONS.recent], ["name", "Name", ICONS.name], ["value", "Price", ICONS.value]];
   if (!sortOptions.some(s => s[0] === state.sort)) state.sort = sortOptions[0][0];
+  $("#sortBtn").classList.toggle("accent", state.sort !== "none");
+  $("#groupBtn").classList.toggle("accent", state.group !== "none");
 
   groupOptions = [["none", "Don’t group", ICONS.none], ["category", "Category", ICONS.category], ["brand", "Brand", ICONS.brand], ["series", "Series", ICONS.series], ["scale", "Size", ICONS.scale],
     owned ? ["condition", "Condition", ICONS.condition] : ["priority", "Priority", ICONS.priority], ["name", "Name (A–Z)", ICONS.name]];
@@ -1406,6 +1410,31 @@ function openForm(item, convertTo) {
     $("#thumbs").hidden = !photos.length;
   };
   paintPhotos();
+  /* The "Add photos" box/+ tile are plain <label for="photoIn">s -- clicking one natively opens the
+     file input's own (OS-default) picker. Where the Camera plugin is available, intercept that click
+     and ask with our own picker sheet instead, same as the Image Recognition button, so this doesn't
+     fall back to a different, unstyled native chooser. */
+  async function addPhotoViaPicker() {
+    const source = await pickPhotoSource();
+    if (!source) return;
+    const P = window.Capacitor && window.Capacitor.Plugins;
+    try {
+      const shot = await P.Camera.getPhoto({ quality: 80, resultType: "base64", source, saveToGallery: false });
+      if (!shot || !shot.base64String) return;
+      const compressed = await compressSrc(`data:image/${shot.format || "jpeg"};base64,${shot.base64String}`);
+      if (photos.length < MAXP) photos.push(compressed);
+      paintPhotos();
+    } catch (e) { if (!/cancel/i.test(String(e && e.message))) toast("Couldn’t get that photo."); }
+  }
+  function interceptAddPhotoLabel(e) {
+    const label = e.target.closest('label[for="photoIn"]'); if (!label) return;
+    const P = window.Capacitor && window.Capacitor.Plugins;
+    if (!P || !P.Camera) return; // no native camera plugin here -- let the native file picker open
+    e.preventDefault();
+    addPhotoViaPicker();
+  }
+  $("#photoMain").addEventListener("click", interceptAddPhotoLabel);
+  $("#thumbs").addEventListener("click", interceptAddPhotoLabel);
   $("#photoIn").addEventListener("change", async e => {
     const files = [...(e.target.files || [])].slice(0, MAXP - photos.length);
     for (const f of files) { try { photos.push(await compress(f)); } catch (err) { toast(err.message || "Couldn’t read that photo."); } }
@@ -1536,7 +1565,7 @@ function openBulkUpdate() {
   const scales = [...new Set(state.items.map(i => i.scale).filter(Boolean))].sort();
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">Update ${n} ${n === 1 ? "item" : "items"}</h2>
-    <p class="hint">Leave a field blank (or on "No change") to keep each item's own value -- only fields you set here get applied to every selected item.</p>
+    <p class="hint bu-intro">Leave a field blank (or on "No change") to keep each item's own value -- only fields you set here get applied to every selected item.</p>
     <div class="row">
       <div class="field"><label for="bu-cat">Category</label>
         <input id="bu-cat" placeholder="No change" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list">
