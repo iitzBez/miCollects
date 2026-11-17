@@ -626,8 +626,11 @@ const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed,
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.5.1";
+const APP_VERSION = "1.5.2";
 const WHATS_NEW = [
+  { version: "1.5.2", date: "17 Nov 2026", items: [
+    "Fixed exported PDFs/backup still not feeling like they'd saved — the share sheet that opened right after saving was visually burying the “saved” confirmation the instant it appeared. Saving is the one thing that happens now; share it afterward yourself if you want to, from your phone's own Files app."
+  ] },
   { version: "1.5.1", date: "17 Nov 2026", items: [
     "The “Export as PDF” option now also shows a total for everything exported, plus Series, Size, Condition, Rarity, Qty and Purchase Date on each item (only the ones that apply), in a cleaner two-column layout instead of one long line.",
     "Each item's photo in that PDF is now centered in its frame with rounded corners, matching the frame around it."
@@ -2607,10 +2610,14 @@ async function shareOrDownload(name, blob, mimeType, shareTitle) {
       // depended on some app in that sheet happening to offer a save-to-storage action, which isn't
       // guaranteed (reported as "can only share it over social media" on some phones). Documents is
       // kept by the OS and browsable from the phone's own Files app, so the file is reliably saved
-      // regardless of what, if anything, is done with the share sheet afterward.
-      const r = await P.Filesystem.writeFile({ path: name, data: base64, directory: "DOCUMENTS" });
-      toast(`Saved ${name} to Documents`);
-      if (P.Share) { try { await P.Share.share({ title: shareTitle, url: r.uri, dialogTitle: `Share ${name}` }); } catch (e) {} }
+      // regardless of what, if anything, is done afterward.
+      // No automatic Share.share() call here anymore, deliberately -- it used to fire immediately
+      // after writing the file, and the native share sheet it opens visually buries the "Saved..."
+      // toast within the same instant, so the save itself was never actually seen (reported as
+      // "still doesn't let you save, only share" even though the file genuinely was being saved).
+      // Saving is now the one, unambiguous outcome of this action.
+      await P.Filesystem.writeFile({ path: name, data: base64, directory: "DOCUMENTS" });
+      toast(`Saved ${name} to your phone's Documents folder`);
       return;
     } catch (e) { if (/cancel/i.test(String(e && e.message))) return; }
   }
@@ -2956,10 +2963,13 @@ async function exportBackup() {
   const data = JSON.stringify({ app: "cabinet", version: 1, exported: new Date().toISOString(), settings, items: state.items });
   const name = `micollects-backup-${new Date().toISOString().slice(0, 10)}.json`;
   const P = window.Capacitor && window.Capacitor.Plugins;
-  if (P && P.Filesystem && P.Share) {
+  if (P && P.Filesystem) {
+    // Same fix as shareOrDownload() below: Documents (not Cache) so it's genuinely saved regardless
+    // of what happens next, and no auto-launched share sheet, which used to visually bury the
+    // "saved" outcome the instant it opened.
     try {
-      const r = await P.Filesystem.writeFile({ path: name, data, directory: "CACHE", encoding: "utf8" });
-      await P.Share.share({ title: "miCollects backup", url: r.uri, dialogTitle: "Save your backup" });
+      await P.Filesystem.writeFile({ path: name, data, directory: "DOCUMENTS", encoding: "utf8" });
+      toast(`Saved ${name} to your phone's Documents folder`);
       return;
     } catch (e) { if (/cancel/i.test(String(e && e.message))) return; }
   }
