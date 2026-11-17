@@ -40,16 +40,23 @@ button,input,select,textarea{font:inherit;color:inherit}
 img{max-width:100%}
 
 /* Header */
-.top{padding:20px 16px 6px;display:flex;align-items:flex-start;gap:12px;max-width:1100px;margin:0 auto}
+.top{padding:20px 16px 6px;display:flex;align-items:flex-start;gap:clamp(6px,2vw,12px);max-width:1100px;margin:0 auto}
 .top-text{flex:1;min-width:0}
-h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;margin:0}
+/* overflow:hidden+ellipsis so "Collection"/"Wishlist" -- one unbreakable word -- clips instead of
+   visually overflowing under the header icons once the icons' own shrinking leaves it too little
+   room; min-width:0 on .top-text above is what lets this flex child's box (and so this) shrink
+   past its content's width in the first place. */
+h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #stats{margin:6px 0 0;color:var(--muted);font-size:14px;min-height:20px}
 .brand{margin:0 0 6px;font:800 15px/1 var(--display);letter-spacing:-.01em;color:var(--ink)}
 .brand span{color:var(--brass)}
-.icon-btn{position:relative;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;flex:none}
-.header-avatar{width:44px;height:44px;padding:0;border-radius:50%;border:1px solid var(--line);background:var(--sunk);display:grid;place-items:center;overflow:hidden;flex:none;cursor:pointer;font:700 16px/1 var(--display);color:var(--muted)}
+/* Header icon buttons shrink with the viewport (rather than staying a fixed 44px) so a narrow
+   phone screen always has room for them beside the title without overlapping it; inner icons are
+   sized in % of the button so they scale down together instead of needing their own breakpoints. */
+.icon-btn{position:relative;width:clamp(34px,10.5vw,44px);height:clamp(34px,10.5vw,44px);border-radius:50%;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;flex:none}
+.header-avatar{width:clamp(34px,10.5vw,44px);height:clamp(34px,10.5vw,44px);padding:0;border-radius:50%;border:1px solid var(--line);background:var(--sunk);display:grid;place-items:center;overflow:hidden;flex:none;cursor:pointer;font:700 clamp(12px,3.8vw,16px)/1 var(--display);color:var(--muted)}
 .header-avatar img{width:100%;height:100%;object-fit:cover}
-.header-avatar svg{width:22px;height:22px}
+.header-avatar svg{width:50%;height:50%}
 .ptr-indicator{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 0;background:var(--surface);border-bottom:1px solid var(--line);font-size:13px;font-weight:650;color:var(--muted);z-index:25;opacity:0;transform:translateY(-12px);pointer-events:none}
 .ptr-indicator.ptr-ready{color:var(--brass)}
 .ptr-spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--brass);flex:none}
@@ -82,7 +89,7 @@ h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;marg
 .value-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-top:1px}
 .value-amt{flex:none;font-weight:650;font-variant-numeric:tabular-nums;text-align:right;display:flex;flex-direction:column;gap:2px}
 .value-sub{font-size:11px;font-weight:500;color:var(--muted)}
-.icon-btn svg{width:20px;height:20px}
+.icon-btn svg{width:45%;height:45%}
 
 /* Toolbar */
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:10px 16px 4px;max-width:1100px;margin:0 auto}
@@ -197,9 +204,22 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 .field input,.field select,.field textarea{width:100%;min-height:46px;border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:10px 12px}
 .field textarea{resize:vertical;min-height:84px}
 .ac-list{position:absolute;left:0;right:0;top:100%;margin:4px 0 0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.18);max-height:180px;overflow-y:auto;z-index:5}
-.ac-list li{padding:9px 10px;border-radius:8px;cursor:pointer;font-size:14px}
+.ac-list li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px;border-radius:8px;cursor:pointer;font-size:14px}
 .ac-list li:hover,.ac-list li.active{background:var(--sunk)}
+.ac-list li.ac-add{color:var(--brass);font-weight:650}
+.ac-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ac-x{all:unset;flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;cursor:pointer;color:var(--muted);font-size:15px;line-height:1}
+.ac-x:hover{background:var(--line);color:var(--ink)}
+.lv-chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}
+.lv-chip{display:inline-flex;align-items:center;gap:6px;background:var(--sunk);border:1px solid var(--line);border-radius:999px;padding:6px 6px 6px 12px;font-size:13px;font-weight:600}
+.lv-x{all:unset;cursor:pointer;flex:none;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;color:var(--muted);font-size:13px;line-height:1}
+.lv-x:hover{background:var(--line);color:var(--ink)}
 .clearable{position:relative}
+/* Standardized so every placeholder (native or the marquee overlay below) uses the same muted
+   token -- without this, native placeholders fall back to the browser's own default gray, which
+   doesn't match var(--muted), making the Size field's placeholder look like a different color
+   from every other field's. */
+input::placeholder,textarea::placeholder{color:var(--muted);opacity:1}
 input.has-marquee::placeholder{color:transparent}
 .ph-text{position:absolute;left:12px;right:12px;top:0;bottom:0;display:flex;align-items:center;overflow:hidden;pointer-events:none;color:var(--muted);font-size:inherit}
 .ph-run{display:inline-block;white-space:nowrap;transform:translateX(0)}
@@ -453,7 +473,7 @@ const store = {
 };
 
 const settings = { currency: "R", layout: "grid2", sort: "recent", group: "none", geminiKey: "", onboarded: false, lastSynced: null, wishlistShareToken: null,
-  firstName: "", lastName: "", phone: "", avatarUrl: "", theme: "system", whatsNewSeenVersion: "" };
+  firstName: "", lastName: "", phone: "", avatarUrl: "", theme: "system", whatsNewSeenVersion: "", predefinedValues: {} };
 function timeAgo(ts) {
   if (!ts) return "";
   const s = Math.max(1, Math.round((Date.now() - ts) / 1000));
@@ -598,8 +618,13 @@ const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed,
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0";
 const WHATS_NEW = [
+  { version: "1.3.0", date: "17 Nov 2026", items: [
+    "Category, Series, Brand, Size and Color now use curated suggestion lists instead of every value ever typed — manage them from Settings > Lists or right from each field's dropdown (add/remove with the ×). A one-off value you type still saves fine on that item without cluttering future suggestions.",
+    "Fixed a placeholder-text color mismatch and overlapping text after picking a suggested value.",
+    "The header icons no longer overlap the \"Collection\"/\"Wishlist\" title on narrow phone screens."
+  ] },
   { version: "1.2.0", date: "17 Nov 2026", items: [
     "Collection Summary now also breaks down what you paid (alongside value), shows quantity on each item, and can be exported as a PDF or CSV from the download icon.",
     "Money is always shown with 2 decimal places and comma thousands separators (e.g. R1,000.00), and a comma typed as a decimal point is now handled correctly."
@@ -629,6 +654,22 @@ const WHATS_NEW = [
 ];
 const price = i => i.list === "owned" ? (+i.value || 0) * (+i.qty || 1) : (+i.target || 0);
 const norm = s => String(s || "").trim().toLowerCase();
+/* Category/Series/Brand/Size/Color suggestions used to be scraped live from every distinct value
+   already on some item -- meaning any one-off text (e.g. "312 pieces") silently became a permanent
+   suggestion forever. Now there's one curated list per field, managed in Settings > Lists and/or
+   inline from the field's own dropdown; a value typed that isn't in the list still saves fine on
+   that item, it just never becomes a suggestion unless explicitly added. Lazily seeded, once per
+   field, from whatever's already on existing items the first time it's asked for -- so upgrading
+   doesn't silently drop every suggestion already in use. */
+const PREDEFINED_FIELDS = [["category", "Category"], ["series", "Series"], ["brand", "Brand"], ["scale", "Size"], ["color", "Color"]];
+function predefinedList(key) {
+  if (!settings.predefinedValues) settings.predefinedValues = {};
+  if (!Array.isArray(settings.predefinedValues[key])) {
+    settings.predefinedValues[key] = [...new Set(state.items.map(i => (i[key] || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    saveSettings();
+  }
+  return settings.predefinedValues[key];
+}
 
 const pillLabel = i => (state.pillField === "series" ? i.series : i.brand) || `No ${state.pillField}`;
 
@@ -1376,31 +1417,54 @@ function addPasswordToggles(root) {
 /* Custom suggestion dropdown shared by Category/Series/Brand/Scale (not a native <datalist>:
    Android WebView mispositions its popup when the input sits inside this scrolling, animated
    bottom sheet). `values` is the full list of distinct previously-used values for that field. */
-function wireSuggest(inputId, listId, values) {
+/* fieldKey is one of PREDEFINED_FIELDS' keys (category/series/brand/scale/color) -- the suggestion
+   list is always read fresh from predefinedList(fieldKey) rather than passed in once, so an
+   add/delete right here in the dropdown (or from Settings > Lists, if that's open elsewhere) is
+   reflected immediately without re-wiring the field. */
+function wireSuggest(inputId, listId, fieldKey) {
   const input = $("#" + inputId), list = $("#" + listId);
   let active = -1;
   const close = () => { list.hidden = true; list.innerHTML = ""; active = -1; input.setAttribute("aria-expanded", "false"); };
-  const open = () => {
+  const render = () => {
+    const values = predefinedList(fieldKey);
     const q = norm(input.value);
     const matches = values.filter(c => norm(c).includes(q) && norm(c) !== q).slice(0, 8);
-    if (!matches.length) { close(); return; }
-    list.innerHTML = matches.map(c => `<li>${esc(c)}</li>`).join("");
+    const typed = input.value.trim();
+    const canAdd = typed && !values.some(v => norm(v) === norm(typed));
+    if (!matches.length && !canAdd) { close(); return; }
+    list.innerHTML = matches.map(c => `<li data-val="${esc(c)}"><span class="ac-label">${esc(c)}</span><button type="button" class="ac-x" data-del="${esc(c)}" aria-label="Remove ${esc(c)} from list">×</button></li>`).join("")
+      + (canAdd ? `<li class="ac-add" data-add="${esc(typed)}">+ Add “${esc(typed)}” to list</li>` : "");
     list.hidden = false; active = -1; input.setAttribute("aria-expanded", "true");
   };
-  input.addEventListener("input", open);
-  input.addEventListener("focus", open);
+  input.addEventListener("input", render);
+  input.addEventListener("focus", render);
   input.addEventListener("blur", () => setTimeout(close, 150));
+  const pick = text => { input.value = text; input.dispatchEvent(new Event("input", { bubbles: true })); close(); };
   list.addEventListener("mousedown", e => {
-    const li = e.target.closest("li"); if (!li) return;
     e.preventDefault();
-    input.value = li.textContent; close();
+    const delBtn = e.target.closest(".ac-x");
+    if (delBtn) {
+      settings.predefinedValues[fieldKey] = predefinedList(fieldKey).filter(v => v !== delBtn.dataset.del);
+      saveSettings(); cloudPushSettings();
+      render();
+      return;
+    }
+    const addLi = e.target.closest(".ac-add");
+    if (addLi) {
+      const val = addLi.dataset.add, vals = predefinedList(fieldKey);
+      if (!vals.some(v => norm(v) === norm(val))) { vals.push(val); vals.sort((a, b) => a.localeCompare(b)); saveSettings(); cloudPushSettings(); }
+      close();
+      return;
+    }
+    const li = e.target.closest("li[data-val]"); if (!li) return;
+    pick(li.dataset.val);
   });
   input.addEventListener("keydown", e => {
     if (list.hidden) return;
-    const items = [...list.children];
+    const items = [...list.querySelectorAll("li[data-val]")];
     if (e.key === "ArrowDown") { e.preventDefault(); active = Math.min(items.length - 1, active + 1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); active = Math.max(0, active - 1); }
-    else if (e.key === "Enter" && active >= 0) { e.preventDefault(); input.value = items[active].textContent; close(); return; }
+    else if (e.key === "Enter" && active >= 0) { e.preventDefault(); pick(items[active].dataset.val); return; }
     else if (e.key === "Escape") { close(); return; }
     else return;
     items.forEach((li, i) => li.classList.toggle("active", i === active));
@@ -1424,11 +1488,6 @@ function openForm(item, convertTo) {
   editing = { it, isNew, convert };
   photos = Array.isArray(it.photos) && it.photos.length ? [...it.photos] : (it.photo ? [it.photo] : []);
   const owned = it.list === "owned";
-  const cats = [...new Set(state.items.map(i => i.category).filter(Boolean))].sort();
-  const seriesList = [...new Set(state.items.map(i => i.series).filter(Boolean))].sort();
-  const brands = [...new Set(state.items.map(i => i.brand).filter(Boolean))].sort();
-  const scales = [...new Set(state.items.map(i => i.scale).filter(Boolean))].sort();
-  const colors = [...new Set(state.items.map(i => i.color).filter(Boolean))].sort();
   const cur = esc(settings.currency);
   const val = v => esc(v ?? "");
   const title = convertTo === "owned" ? "Add to collection" : convertTo === "wish" ? "Move to wishlist"
@@ -1613,11 +1672,11 @@ function openForm(item, convertTo) {
 
   /* Custom suggestions (not a native <datalist>: Android WebView mispositions its popup when the
      input sits inside this scrolling, animated bottom sheet). */
-  wireSuggest("f-cat", "catSuggest", cats);
-  wireSuggest("f-series", "seriesSuggest", seriesList);
-  wireSuggest("f-brand", "brandSuggest", brands);
-  wireSuggest("f-scale", "scaleSuggest", scales);
-  wireSuggest("f-color", "colorSuggest", colors);
+  wireSuggest("f-cat", "catSuggest", "category");
+  wireSuggest("f-series", "seriesSuggest", "series");
+  wireSuggest("f-brand", "brandSuggest", "brand");
+  wireSuggest("f-scale", "scaleSuggest", "scale");
+  wireSuggest("f-color", "colorSuggest", "color");
   wireStars("f-rating");
 
   const condBtn = $("#f-cond");
@@ -1702,11 +1761,6 @@ function openBulkUpdate() {
   if (!n) return;
   const owned = state.tab === "owned";
   const cur = esc(settings.currency);
-  const cats = [...new Set(state.items.map(i => i.category).filter(Boolean))].sort();
-  const seriesList = [...new Set(state.items.map(i => i.series).filter(Boolean))].sort();
-  const brands = [...new Set(state.items.map(i => i.brand).filter(Boolean))].sort();
-  const scales = [...new Set(state.items.map(i => i.scale).filter(Boolean))].sort();
-  const colors = [...new Set(state.items.map(i => i.color).filter(Boolean))].sort();
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">Update ${n} ${n === 1 ? "item" : "items"}</h2>
     <p class="hint bu-intro">Leave a field blank (or on "No change") to keep each item's own value -- only fields you set here get applied to every selected item.</p>
@@ -1757,11 +1811,11 @@ function openBulkUpdate() {
       <button class="btn primary" id="bulkSaveBtn">Update ${n} ${n === 1 ? "item" : "items"}</button>
       <button class="btn ghost" id="bulkCancelBtn">Cancel</button>
     </div>`;
-  wireSuggest("bu-cat", "buCatSuggest", cats);
-  wireSuggest("bu-series", "buSeriesSuggest", seriesList);
-  wireSuggest("bu-brand", "buBrandSuggest", brands);
-  wireSuggest("bu-scale", "buScaleSuggest", scales);
-  wireSuggest("bu-color", "buColorSuggest", colors);
+  wireSuggest("bu-cat", "buCatSuggest", "category");
+  wireSuggest("bu-series", "buSeriesSuggest", "series");
+  wireSuggest("bu-brand", "buBrandSuggest", "brand");
+  wireSuggest("bu-scale", "buScaleSuggest", "scale");
+  wireSuggest("bu-color", "buColorSuggest", "color");
   wireStars("bu-rating");
   const rarityBtn = $("#bu-rarity");
   rarityBtn.addEventListener("click", () => openPicker("Rarity",
@@ -2276,6 +2330,23 @@ function apiTabHtml() {
     </div>`;
 }
 
+/* Bulk management of the same predefinedValues lists the field dropdowns add/delete from inline
+   (see wireSuggest) -- this is the place for cleaning up many at once, rather than one at a time
+   while in the middle of adding an item. */
+function listsTabHtml() {
+  return `<p class="hint">These are the values suggested in Category, Series, Brand, Size and Color when adding an item. A value you type that isn't here still saves fine on that item -- it just won't be suggested unless you add it.</p>`
+    + PREDEFINED_FIELDS.map(([key, label]) => {
+      const values = predefinedList(key);
+      return `
+    <h3>${esc(label)}</h3>
+    <div class="lv-chips">${values.length ? values.map(v => `<span class="lv-chip">${esc(v)}<button type="button" class="lv-x" data-field="${key}" data-val="${esc(v)}" aria-label="Remove ${esc(v)}">×</button></span>`).join("") : `<p class="hint">No values yet — add one below.</p>`}</div>
+    <div class="url-row">
+      <input id="lv-add-${key}" placeholder="Add a value" autocomplete="off">
+      <button type="button" class="btn ghost" data-add="${key}">Add</button>
+    </div>`;
+    }).join("");
+}
+
 /* Reached from the header avatar/account button, not from Settings -- signing in/up, editing the
    signed-in account, and the sign-in prompt for a signed-out user all live here now. */
 function openAccount() {
@@ -2604,9 +2675,9 @@ function openWhatsNew() {
 }
 
 function openSettings() {
-  const tabs = [["general", "General"], ["api", "API"]];
+  const tabs = [["general", "General"], ["lists", "Lists"], ["api", "API"]];
   if (!tabs.some(([k]) => k === settingsTab)) settingsTab = "general";
-  const tabBody = settingsTab === "api" ? apiTabHtml() : generalTabHtml();
+  const tabBody = settingsTab === "api" ? apiTabHtml() : settingsTab === "lists" ? listsTabHtml() : generalTabHtml();
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">Settings</h2>
     <div class="settings-tabs" id="settingsTabs" role="tablist">
@@ -2648,6 +2719,27 @@ function openSettings() {
       else hint.textContent = "Saved.";
       toast("API key saved");
     });
+  } else if (settingsTab === "lists") {
+    $("#settingsTabBody").addEventListener("click", e => {
+      const xBtn = e.target.closest(".lv-x");
+      if (xBtn) {
+        const { field, val } = xBtn.dataset;
+        settings.predefinedValues[field] = predefinedList(field).filter(v => v !== val);
+        saveSettings(); cloudPushSettings(); openSettings();
+        return;
+      }
+      const addBtn = e.target.closest("[data-add]");
+      if (addBtn) {
+        const key = addBtn.dataset.add, input = $("#lv-add-" + key), v = input.value.trim();
+        if (!v) return;
+        const vals = predefinedList(key);
+        if (!vals.some(x => norm(x) === norm(v))) { vals.push(v); vals.sort((a, b) => a.localeCompare(b)); }
+        saveSettings(); cloudPushSettings(); openSettings();
+      }
+    });
+    PREDEFINED_FIELDS.forEach(([key]) => $("#lv-add-" + key).addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); $(`[data-add="${key}"]`).click(); }
+    }));
   }
   $("#sDone").addEventListener("click", closeSheet);
   addClearButtons($("#sheetBody"));
