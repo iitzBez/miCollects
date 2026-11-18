@@ -676,8 +676,11 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.10";
+const APP_VERSION = "1.6.11";
 const WHATS_NEW = [
+  { version: "1.6.11", date: "18 Nov 2026", items: [
+    "The Collection Summary (and its PDF export) and the collection/wishlist PDF export now show Price Paid/Target Price as the main bold amount per item instead of Value — matching the cards, which already showed what you paid."
+  ] },
   { version: "1.6.10", date: "18 Nov 2026", items: [
     "Export (PDF/CSV) and Backup now save an actual, findable copy into your phone's Downloads folder again, same as before, as well as still bringing up the share sheet — the previous fix only made the share sheet work, with no persistent copy anywhere you could find it."
   ] },
@@ -792,6 +795,9 @@ const WHATS_NEW = [
   ] }
 ];
 const price = i => i.list === "owned" ? (+i.value || 0) * (+i.qty || 1) : (+i.target || 0);
+// What you actually paid (owned) or hope to pay (wishlist) -- the right number for a single "main
+// price" display, as opposed to price()'s current/estimated value, which is a different stat.
+const mainPrice = i => i.list === "owned" ? (+i.paid || 0) : (+i.target || 0);
 const norm = s => String(s || "").trim().toLowerCase();
 /* Category/Series/Brand/Size/Color suggestions used to be scraped live from every distinct value
    already on some item -- meaning any one-off text (e.g. "312 pieces") silently became a permanent
@@ -2823,7 +2829,7 @@ function openSummary() {
   const cats = byCount("category", "Uncategorized");
   const brands = byCount("brand", "No brand");
   const maxCat = cats[0][1], maxBrand = brands[0][1];
-  const byValue = [...items].sort((a, b) => price(b) - price(a));
+  const byValue = [...items].sort((a, b) => (+b.paid || 0) - (+a.paid || 0));
   const barRow = (label, count, max) => `
     <div class="bar-row">
       <div class="bar-label"><span>${esc(label)}</span><span>${count}</span></div>
@@ -2848,8 +2854,8 @@ function openSummary() {
     ${cats.map(([k, c]) => barRow(k, c, maxCat)).join("")}
     <h3>By brand</h3>
     ${brands.map(([k, c]) => barRow(k, c, maxBrand)).join("")}
-    <h3>By value (highest first)</h3>
-    <div class="value-list">${byValue.map(i => `<div class="value-row"><span class="value-name">${esc(i.name || "Untitled")}</span><span class="value-amt">${money(price(i))}<span class="value-sub">paid ${money(+i.paid || 0)} · qty ${+i.qty || 1}</span></span></div>`).join("")}</div>
+    <h3>By price paid (highest first)</h3>
+    <div class="value-list">${byValue.map(i => `<div class="value-row"><span class="value-name">${esc(i.name || "Untitled")}</span><span class="value-amt">${money(+i.paid || 0)}<span class="value-sub">value ${money(price(i))} · qty ${+i.qty || 1}</span></span></div>`).join("")}</div>
     <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>`;
   $("#sDone").addEventListener("click", closeSheet);
   $("#summaryExportBtn").addEventListener("click", () => openPicker("Export", [
@@ -3007,7 +3013,7 @@ function exportSummaryPdf({ n, pieces, totalPaid, total, avgPaid, avg, cats, bra
   sectionHeading("By brand");
   const maxBrand = brands[0][1]; brands.forEach(([k, c]) => barRow(k, c, maxBrand));
   y += 3;
-  sectionHeading("By value (highest first)");
+  sectionHeading("By price paid (highest first)");
   /* A row per item, not a bubble per item -- with a collection of 100+ items the earlier bubble
      layout (~17mm tall each) ran to many pages; a dense table row (7mm) fits 4-5x as many per page. */
   const colQty = 16, colPaid = 30, colValue = 32, colName = contentW - colQty - colPaid - colValue;
@@ -3017,8 +3023,8 @@ function exportSummaryPdf({ n, pieces, totalPaid, total, avgPaid, avg, cats, bra
     doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...MUTED);
     doc.text("Name", xName, y);
     doc.text("Qty", xQtyEnd, y, { align: "right" });
-    doc.text("Paid", xPaidEnd, y, { align: "right" });
-    doc.text("Value", xValueEnd, y, { align: "right" });
+    doc.text("Value", xPaidEnd, y, { align: "right" });
+    doc.text("Paid", xValueEnd, y, { align: "right" });
     y += 2;
     doc.setDrawColor(...LINE); doc.line(marginX, y, pageW - marginX, y);
     y += 5;
@@ -3033,9 +3039,9 @@ function exportSummaryPdf({ n, pieces, totalPaid, total, avgPaid, avg, cats, bra
     if (nm !== (it.name || "Untitled")) nm = nm.slice(0, -2) + "…";
     doc.setTextColor(...INK); doc.text(nm, xName, y);
     doc.text(String(+it.qty || 1), xQtyEnd, y, { align: "right" });
-    doc.setTextColor(...MUTED); doc.text(money(+it.paid || 0), xPaidEnd, y, { align: "right" });
+    doc.setTextColor(...MUTED); doc.text(money(price(it)), xPaidEnd, y, { align: "right" });
     doc.setTextColor(...INK); doc.setFont("helvetica", "bold");
-    doc.text(money(price(it)), xValueEnd, y, { align: "right" });
+    doc.text(money(+it.paid || 0), xValueEnd, y, { align: "right" });
     y += rowH;
   });
 
@@ -3054,7 +3060,7 @@ async function exportItemsPdf(items) {
   const owned = items[0] && items[0].list === "owned";
   let y = drawPdfHeader(doc, marginX, pageW, owned ? "My Collection" : "My Wishlist");
 
-  const total = items.reduce((s, it) => s + price(it), 0);
+  const total = items.reduce((s, it) => s + mainPrice(it), 0);
   doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(...PDF_INK);
   doc.text(`${items.length} ${items.length === 1 ? "item" : "items"}`, marginX, y);
   doc.text(`Total: ${money(total)}`, pageW - marginX, y, { align: "right" });
@@ -3113,7 +3119,7 @@ async function exportItemsPdf(items) {
     doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(...PDF_INK);
     doc.text(fit(it.name || "Untitled", maxTextW, 11), textX, ty);
     doc.setFont("helvetica", "bold"); doc.setFontSize(11);
-    doc.text(money(price(it)), pageW - marginX - 3, ty, { align: "right" });
+    doc.text(money(mainPrice(it)), pageW - marginX - 3, ty, { align: "right" });
 
     if (sub) { ty += 6; doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_MUTED); doc.text(fit(sub, maxTextW, 9), textX, ty); }
     if (metaRows) {
