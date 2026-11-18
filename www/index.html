@@ -676,10 +676,13 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.6";
+const APP_VERSION = "1.6.7";
 const WHATS_NEW = [
+  { version: "1.6.7", date: "18 Nov 2026", items: [
+    "Fixed Export as PDF doing nothing at all, for both the Summary export and the collection/wishlist export — a failed save was being swallowed silently instead of showing an error, so tapping Export looked like it did nothing. Any save problem now shows a message instead of just sitting there."
+  ] },
   { version: "1.6.6", date: "18 Nov 2026", items: [
-    "Fixed PDF export breaking entirely (both the collection/wishlist export and the Summary export) — reverted the logo images added to the PDF header/footer back to plain text, which is what actually caused it."
+    "Attempted fix (reverted the PDF header/footer logo images back to plain text) — superseded in 1.6.7, which found the real cause."
   ] },
   { version: "1.6.5", date: "18 Nov 2026", items: [
     "Attempted fix (removed the \"Browse item\" PDF link) — superseded in 1.6.6, which found the real cause."
@@ -2842,9 +2845,11 @@ function openSummary() {
   $("#sDone").addEventListener("click", closeSheet);
   $("#summaryExportBtn").addEventListener("click", () => openPicker("Export", [
     ["pdf", "PDF"], ["csv", "CSV"]
-  ], null, v => {
-    if (v === "csv") exportSummaryCsv({ n, pieces, totalPaid, total, avgPaid, avg, byValue });
-    else exportSummaryPdf({ n, pieces, totalPaid, total, avgPaid, avg, cats, brands, byValue });
+  ], null, async v => {
+    try {
+      if (v === "csv") await exportSummaryCsv({ n, pieces, totalPaid, total, avgPaid, avg, byValue });
+      else await exportSummaryPdf({ n, pieces, totalPaid, total, avgPaid, avg, cats, brands, byValue });
+    } catch (e) { toast("Couldn’t export: " + authErrorMsg(e)); }
   }));
   showSheet();
 }
@@ -2854,22 +2859,31 @@ function openSummary() {
    fallback differs (a direct Blob download works from any sheet, unlike exportBackup()'s reliance on
    a textarea that only exists in the Settings sheet). */
 async function shareOrDownload(name, blob, mimeType, shareTitle) {
+  // Native calls below previously had no timeout and a catch that only handled a cancelled
+  // permission/share dialog -- any OTHER native failure (permission denied, disk error, a plugin
+  // call that just never resolves) fell through silently into the web-only fallbacks further down,
+  // which do nothing at all inside the app's WebView (no Web Share API, and a blob-URL <a download>
+  // click has nowhere to go). That read on-device as "nothing happens", with no toast or share sheet
+  // and nothing thrown for the caller's own catch to report. A real native failure now rethrows so
+  // the caller's "Couldn't share: ..." toast actually fires, and a hang times out instead of lasting
+  // forever.
+  const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("Timed out saving the file")), ms))]);
   const P = window.Capacitor && window.Capacitor.Plugins;
   if (P && P.Filesystem) {
+    const base64 = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result.split(",")[1]);
+      r.onerror = rej;
+      r.readAsDataURL(blob);
+    });
     try {
-      const base64 = await new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(r.result.split(",")[1]);
-        r.onerror = rej;
-        r.readAsDataURL(blob);
-      });
       // Documents, not Cache -- kept by the OS and browsable from the phone's own Files app, so the
       // file is reliably saved regardless of what, if anything, is done with the share sheet after.
-      const r = await P.Filesystem.writeFile({ path: name, data: base64, directory: "DOCUMENTS" });
+      const r = await withTimeout(P.Filesystem.writeFile({ path: name, data: base64, directory: "DOCUMENTS" }), 20000);
       toast(`Saved ${name} to Documents`);
-      if (P.Share) { try { await P.Share.share({ title: shareTitle, url: r.uri, dialogTitle: `Share ${name}` }); } catch (e) {} }
+      if (P.Share) { try { await withTimeout(P.Share.share({ title: shareTitle, url: r.uri, dialogTitle: `Share ${name}` }), 20000); } catch (e) {} }
       return;
-    } catch (e) { if (/cancel/i.test(String(e && e.message))) return; }
+    } catch (e) { if (/cancel/i.test(String(e && e.message))) return; throw e; }
   }
   try {
     const file = new File([blob], name, { type: mimeType });
@@ -3004,7 +3018,7 @@ function exportSummaryPdf({ n, pieces, totalPaid, total, avgPaid, avg, cats, bra
   });
 
   const name = `micollects-summary-${new Date().toISOString().slice(0, 10)}.pdf`;
-  shareOrDownload(name, doc.output("blob"), "application/pdf", "Collection summary (PDF)");
+  return shareOrDownload(name, doc.output("blob"), "application/pdf", "Collection summary (PDF)");
 }
 
 /* Every item gets its own row with its main photo -- it.photos[0] is already a local base64
