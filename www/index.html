@@ -676,8 +676,11 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.7";
+const APP_VERSION = "1.6.8";
 const WHATS_NEW = [
+  { version: "1.6.8", date: "18 Nov 2026", items: [
+    "Fixed Export as PDF/CSV failing with \"FILE_NOTCREATED\" — the Documents folder it saves into wasn't being created first on a device that didn't already have one."
+  ] },
   { version: "1.6.7", date: "18 Nov 2026", items: [
     "Fixed Export as PDF doing nothing at all, for both the Summary export and the collection/wishlist export — a failed save was being swallowed silently instead of showing an error, so tapping Export looked like it did nothing. Any save problem now shows a message instead of just sitting there."
   ] },
@@ -2879,7 +2882,7 @@ async function shareOrDownload(name, blob, mimeType, shareTitle) {
     try {
       // Documents, not Cache -- kept by the OS and browsable from the phone's own Files app, so the
       // file is reliably saved regardless of what, if anything, is done with the share sheet after.
-      const r = await withTimeout(P.Filesystem.writeFile({ path: name, data: base64, directory: "DOCUMENTS" }), 20000);
+      const r = await withTimeout(P.Filesystem.writeFile({ path: name, data: base64, directory: "DOCUMENTS", recursive: true }), 20000);
       toast(`Saved ${name} to Documents`);
       if (P.Share) { try { await withTimeout(P.Share.share({ title: shareTitle, url: r.uri, dialogTitle: `Share ${name}` }), 20000); } catch (e) {} }
       return;
@@ -3238,7 +3241,7 @@ async function exportBackup() {
   const P = window.Capacitor && window.Capacitor.Plugins;
   if (P && P.Filesystem) {
     try {
-      const r = await P.Filesystem.writeFile({ path: name, data, directory: "DOCUMENTS", encoding: "utf8" });
+      const r = await P.Filesystem.writeFile({ path: name, data, directory: "DOCUMENTS", encoding: "utf8", recursive: true });
       toast(`Saved ${name} to Documents`);
       if (P.Share) { try { await P.Share.share({ title: "miCollects backup", url: r.uri, dialogTitle: "Share your backup" }); } catch (e) {} }
       return;
