@@ -676,10 +676,10 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.2";
+const APP_VERSION = "1.6.3";
 const WHATS_NEW = [
-  { version: "1.6.2", date: "18 Nov 2026", items: [
-    "Fixed Image Recognition failing again when its usual model was briefly unavailable — it now falls back to the newest working model it can find instead of an old one Google had already quietly retired."
+  { version: "1.6.3", date: "18 Nov 2026", items: [
+    "Fixed Image Recognition failing again — one of Google's two \"always current\" models was down for a bit, so it now tries both before giving up, instead of only the one that happened to be having trouble."
   ] },
   { version: "1.6.1", date: "18 Nov 2026", items: [
     "The \"Recognise photos\" button now has a Google-colors wave animated around it once a photo's added, so it's easier to spot.",
@@ -1217,15 +1217,18 @@ const GEMINI_PROMPT = "You are helping catalog a physical collectible (e.g. a di
   + "empty strings and price as null.";
 
 /* Pinning this to one specific versioned model name (twice, now) has silently broken every few
-   months as Google retired it -- and testing against a real key just showed why pinning to ANY
-   single name, versioned or not, isn't enough: ListModels still listed gemini-2.5-flash as
-   supporting generateContent, but actually calling it 404'd regardless. "-latest" is Google's own
-   perpetual alias for exactly this -- always the current recommended model, never itself retired --
-   so try that first, then its lighter sibling (which held up when "-latest" briefly 503'd under
-   load in that same test), and only fall back to asking ListModels directly if Google ever drops
-   both aliases entirely. */
-const GEMINI_MODEL_ALIASES = ["gemini-flash-latest", "gemini-flash-lite-latest"];
-let geminiModelCache = null, geminiModelCacheKey = null;
+   months as Google retired it. "-latest" is Google's own perpetual alias for exactly this -- it
+   always points at whatever the current recommended flash model actually is, so there's no version
+   here to ever go stale, unlike a numbered name. A fallback chain through OTHER listed models looked
+   safer but wasn't: ListModels can keep listing an older model as generateContent-capable well after
+   Google's actually turned generation off for it (confirmed against a real key -- gemini-2.5-flash
+   is exactly such a case), so "try something else" could, and did, end up picking a model that was
+   already broken. Tried dropping to a single alias entirely, but a live test against a real key hit
+   gemini-flash-latest 503ing three times running while gemini-flash-lite-latest succeeded instantly
+   every time -- so lite is primary now, with the full model as a same-trust-level backup (both are
+   Google's own always-current aliases, never a guess at a possibly-retired numbered model). Plenty
+   for a structured-JSON "what's in this photo" task either way. */
+const GEMINI_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest"];
 async function geminiHttp(method, url, body) {
   // Testing this against the real API just hit a request that never resolved at all -- the native
   // path's own connectTimeout/readTimeout should cover that, but the plain-fetch fallback had no
@@ -1252,34 +1255,6 @@ async function geminiHttp(method, url, body) {
   })();
   return Promise.race([run, timeout]);
 }
-async function pickGeminiModel(key, exclude) {
-  if (geminiModelCache && geminiModelCacheKey === key) return geminiModelCache;
-  let data;
-  try { data = await geminiHttp("GET", `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`); }
-  catch (e) { e.stage = "list-models"; throw e; }
-  const bare = m => m.name.replace(/^models\//, "");
-  // Already-tried aliases excluded -- otherwise, if ListModels happened to list them first, this
-  // would just retry the exact model that was already confirmed broken a moment ago. A "-latest"
-  // alias is still preferred over any numbered model name, even here: ListModels can keep listing a
-  // numbered model as generateContent-capable well after Google's actually turned generation off for
-  // it (confirmed against a real key -- gemini-2.5-flash is exactly such a case), while "-latest"
-  // always points at whatever's currently live.
-  const usable = (data.models || []).filter(m => (m.supportedGenerationMethods || []).includes("generateContent") && !(exclude || []).includes(bare(m)));
-  // Plain "gemini-X[.Y]-flash", no extra suffix -- picking the highest X.Y among these (not just the
-  // first list match) matters because ListModels lists old and new side by side with nothing marking
-  // either as retired; a newer version number is the best available signal that it's less likely to
-  // be the next one Google turns off.
-  const plainFlash = usable.filter(m => /^gemini-\d+(?:\.\d+)?-flash$/i.test(bare(m)))
-    .sort((a, b) => parseFloat(bare(b).match(/[\d.]+/)[0]) - parseFloat(bare(a).match(/[\d.]+/)[0]));
-  const pick = usable.find(m => /-latest$/i.test(bare(m)) && /flash/i.test(bare(m)))
-    || plainFlash[0]
-    || usable.find(m => /flash/i.test(bare(m)) && !/preview|exp/i.test(bare(m)))
-    || usable.find(m => /flash/i.test(bare(m)))
-    || usable[0];
-  if (!pick) throw Object.assign(new Error("no-model"), { stage: "list-models" });
-  geminiModelCache = bare(pick); geminiModelCacheKey = key;
-  return geminiModelCache;
-}
 async function recognizePhotos(base64s) {
   const key = (settings.geminiKey || "").trim();
   if (!key) throw Object.assign(new Error("No Gemini API key set"), { code: "no-key" });
@@ -1288,19 +1263,12 @@ async function recognizePhotos(base64s) {
     generationConfig: { responseMimeType: "application/json" }
   });
   let data, lastErr;
-  for (const model of GEMINI_MODEL_ALIASES) {
-    try { data = await geminiHttp("POST", `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, body); lastErr = null; break; }
-    catch (e) { e.stage = "generate-content"; e.model = model; lastErr = e; if (e.status !== 404 && e.status !== 503) break; }
+  for (const model of GEMINI_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+    try { data = await geminiHttp("POST", url, body); lastErr = null; break; }
+    catch (e) { e.stage = "generate-content"; e.model = model; lastErr = e; }
   }
-  if (lastErr) {
-    // Both aliases are gone or unreachable -- last resort, ask what this key can actually use,
-    // excluding whichever aliases were just tried so this can't just retry the same failure.
-    let fallbackModel;
-    try {
-      fallbackModel = await pickGeminiModel(key, GEMINI_MODEL_ALIASES);
-      data = await geminiHttp("POST", `https://generativelanguage.googleapis.com/v1beta/models/${fallbackModel}:generateContent?key=${encodeURIComponent(key)}`, body);
-    } catch (e2) { e2.stage = e2.stage || "generate-content"; e2.model = e2.model || fallbackModel; throw e2; }
-  }
+  if (lastErr) throw lastErr;
   const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
   const raw = parts.map(p => p.text || "").join("").trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
   if (!raw) throw new Error("empty");
@@ -1401,13 +1369,13 @@ function wireCamera(it, paintPhotos, dup) {
       hint.innerHTML = `Filled in ${esc(listJoin(filled))} from your photos. Check the details, then save.`
         + (d.search ? ` <a href="https://www.google.com/search?tbm=isch&q=${encodeURIComponent(d.search)}" target="_blank" rel="noopener">Search for a clean photo online</a> if you’d rather use one — paste its page link above and tap Fetch.` : "");
     } catch (e) {
-      console.error("recognizePhotos failed", e && e.stage, e && e.model, e);
+      console.error("recognizePhotos failed", e && e.model, e);
       show(e && e.code === "no-key" ? "Add a free Gemini API key in Settings to auto-fill the details from your photos."
         : e && e.timedOut ? "The recognition service took too long to respond. Check your connection and try again."
-        : e && e.status === 404 && e.stage === "list-models" ? "Couldn’t get your account’s model list from Google (error 404)."
         : e && e.status === 404 ? `The recognition model (${e.model || "unknown"}) isn’t available any more (Google retired it) — this needs a code update.`
         : e && e.status === 400 ? "The recognition service rejected the API key. Check it in Settings."
-        : e && e.status ? `The recognition service refused the request (error ${e.status}, ${e.stage || "unknown stage"}).`
+        : e && e.status === 503 ? "Google's recognition service is busy right now. Try again in a moment."
+        : e && e.status ? `The recognition service refused the request (error ${e.status}).`
         : "Couldn’t reach the recognition service. Check your connection.");
       doneBtn.disabled = false; doneBtn.textContent = "Recognise photos"; doneBtn.classList.add("ai-glow");
     } finally { btn.disabled = false; }
