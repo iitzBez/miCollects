@@ -676,10 +676,13 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.4";
+const APP_VERSION = "1.6.5";
 const WHATS_NEW = [
+  { version: "1.6.5", date: "18 Nov 2026", items: [
+    "Removed the \"Browse item\" link from PDF exports — it was still breaking the export for some items even after the previous fix, so it's gone rather than risk it again."
+  ] },
   { version: "1.6.4", date: "18 Nov 2026", items: [
-    "Fixed exporting a selection of items as PDF failing outright when one of them had a URL that couldn't be turned into a link — it now just skips that one item's link instead of cancelling the whole export."
+    "Attempted fix for exporting a selection of items as PDF failing when one had a URL that couldn't be turned into a link — superseded in 1.6.5."
   ] },
   { version: "1.6.3", date: "18 Nov 2026", items: [
     "Fixed Image Recognition failing again — one of Google's two \"always current\" models was down for a bit, so it now tries both before giving up, instead of only the one that happened to be having trouble."
@@ -3058,9 +3061,7 @@ async function exportItemsPdf(items) {
     if (it.rarity) colB.push(["Rarity", it.rarity]);
     if (owned && it.purchaseDate) colB.push(["Purchased", it.purchaseDate]);
     const metaRows = Math.max(colA.length, colB.length);
-    const hasLink = typeof it.productUrl === "string" && /^https?:\/\//i.test(it.productUrl);
-    const linkH = hasLink ? metaLineH + (metaRows ? 0 : 3) : 0;
-    const rowH = Math.max(imgSize + 4, 11 + (sub ? 6 : 0) + (metaRows ? 3 + metaRows * metaLineH : 0) + linkH + 5);
+    const rowH = Math.max(imgSize + 4, 11 + (sub ? 6 : 0) + (metaRows ? 3 + metaRows * metaLineH : 0) + 5);
 
     if (y + rowH > pageH - 15) { doc.addPage(); y = 20; }
     doc.setFillColor(...PDF_SUNK); doc.roundedRect(marginX, y, contentW, rowH, 3, 3, "F");
@@ -3097,22 +3098,6 @@ async function exportItemsPdf(items) {
         if (colB[i]) doc.text(fit(`${colB[i][0]}: ${colB[i][1]}`, colW, 8), col2X, rowY);
       }
       ty += metaRows * metaLineH;
-    }
-    // One bad URL throwing inside textWithLink() (an odd character jsPDF's link-annotation encoding
-    // can't handle, say) used to abort the whole export for every item, not just this one row --
-    // same defensive pattern as the photo block above.
-    if (hasLink) {
-      try {
-        ty += linkH;
-        // No unicode arrow here -- jsPDF's base Helvetica font only supports WinAnsi's ~256
-        // characters, and a character outside that (like "→") made it fall back to a broken
-        // wide-spaced encoding.
-        const label = fit("Browse item", maxTextW, 8);
-        doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...PDF_BRASS);
-        doc.textWithLink(label, textX, ty, { url: it.productUrl });
-        doc.setDrawColor(...PDF_BRASS); doc.setLineWidth(0.2);
-        doc.line(textX, ty + 0.8, textX + doc.getTextWidth(label), ty + 0.8);
-      } catch (e) {}
     }
     y += rowH + 4;
   });
