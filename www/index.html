@@ -266,6 +266,9 @@ input.has-marquee::placeholder{color:transparent}
 .url-row .clearable input{padding-right:34px}
 .url-row .clearable.has-pw input{padding-right:64px}
 .url-row .btn.primary, .url-row .btn.ghost{flex:none;min-height:34px;padding:0 10px;font-size:13px}
+.tel-row{display:flex;gap:8px}
+.tel-row .tel-code{flex:none;width:auto;min-width:88px;justify-content:center;gap:4px;padding:0 10px;font-size:15px}
+.tel-row input{flex:1;min-width:0;min-height:48px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px 12px;font-size:16px;font-family:inherit}
 .url-box .hint a{color:var(--brass);font-weight:600}
 .btn[disabled]{opacity:.6;cursor:progress}
 .photo-main{aspect-ratio:16/10;border-radius:14px;background:var(--sunk);overflow:hidden;display:grid}
@@ -481,7 +484,7 @@ const store = {
 };
 
 const settings = { currency: "R", layout: "grid2", sort: "recent", group: "none", geminiKey: "", onboarded: false, lastSynced: null, wishlistShareToken: null,
-  firstName: "", lastName: "", phone: "", avatarUrl: "", theme: "system", whatsNewSeenVersion: "", predefinedValues: {}, customFields: [] };
+  firstName: "", lastName: "", phone: "", phoneCountry: "ZA", avatarUrl: "", theme: "system", whatsNewSeenVersion: "", predefinedValues: {}, customFields: [] };
 function timeAgo(ts) {
   if (!ts) return "";
   const s = Math.max(1, Math.round((Date.now() - ts) / 1000));
@@ -624,10 +627,40 @@ const ICONS = {
 };
 const CONDITION_ICONS = { "": ICONS.notSet, "Sealed / new in box": ICONS.sealed, "Mint": ICONS.layers, "Near mint": ICONS.layers, "Excellent": ICONS.excellent, "Good": ICONS.good, "Fair": ICONS.fair, "Poor": ICONS.poor };
 const THEME_OPTIONS = [["system", "System", ICONS.themeSystem], ["light", "Light", ICONS.themeLight], ["dark", "Dark", ICONS.themeDark]];
+/* The app only ever prefixes amounts with this symbol (no real conversion/formatting rules per
+   currency) -- so the picker's value is still just the symbol, same as the old free-text field. */
+const CURRENCY_OPTIONS = [
+  ["R", "South African Rand (R)"], ["$", "US Dollar ($)"], ["€", "Euro (€)"], ["£", "British Pound (£)"],
+  ["¥", "Japanese Yen / Chinese Yuan (¥)"], ["A$", "Australian Dollar (A$)"], ["C$", "Canadian Dollar (C$)"],
+  ["NZ$", "New Zealand Dollar (NZ$)"], ["₹", "Indian Rupee (₹)"], ["₦", "Nigerian Naira (₦)"],
+  ["KSh", "Kenyan Shilling (KSh)"], ["CHF", "Swiss Franc (CHF)"], ["kr", "Nordic Krona/Krone (kr)"]
+];
+/* Regional indicator letters, two per flag -- U+1F1E6 ("A") is 127397 past 'A' (65), so this just
+   offsets each letter of the ISO code into that range rather than needing 40+ pasted flag glyphs. */
+const flagEmoji = iso => String.fromCodePoint(...[...iso.toUpperCase()].map(c => 127397 + c.charCodeAt(0)));
+const COUNTRY_CODES = [
+  ["ZA", "+27", "South Africa"], ["NA", "+264", "Namibia"], ["BW", "+267", "Botswana"], ["LS", "+266", "Lesotho"],
+  ["SZ", "+268", "Eswatini"], ["MZ", "+258", "Mozambique"], ["ZW", "+263", "Zimbabwe"], ["ZM", "+260", "Zambia"],
+  ["AO", "+244", "Angola"], ["KE", "+254", "Kenya"], ["NG", "+234", "Nigeria"], ["GH", "+233", "Ghana"],
+  ["EG", "+20", "Egypt"], ["MA", "+212", "Morocco"], ["GB", "+44", "United Kingdom"], ["IE", "+353", "Ireland"],
+  ["US", "+1", "United States"], ["CA", "+1", "Canada"], ["AU", "+61", "Australia"], ["NZ", "+64", "New Zealand"],
+  ["DE", "+49", "Germany"], ["FR", "+33", "France"], ["ES", "+34", "Spain"], ["PT", "+351", "Portugal"],
+  ["IT", "+39", "Italy"], ["NL", "+31", "Netherlands"], ["BE", "+32", "Belgium"], ["CH", "+41", "Switzerland"],
+  ["AT", "+43", "Austria"], ["SE", "+46", "Sweden"], ["NO", "+47", "Norway"], ["DK", "+45", "Denmark"],
+  ["FI", "+358", "Finland"], ["PL", "+48", "Poland"], ["IN", "+91", "India"], ["CN", "+86", "China"],
+  ["JP", "+81", "Japan"], ["KR", "+82", "South Korea"], ["SG", "+65", "Singapore"], ["AE", "+971", "United Arab Emirates"],
+  ["SA", "+966", "Saudi Arabia"], ["IL", "+972", "Israel"], ["BR", "+55", "Brazil"], ["MX", "+52", "Mexico"],
+  ["AR", "+54", "Argentina"]
+].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.5.7";
+const APP_VERSION = "1.5.8";
 const WHATS_NEW = [
+  { version: "1.5.8", date: "18 Nov 2026", items: [
+    "Fixed PDF exports not registering every tap when multi-selecting several items quickly.",
+    "Fixed the \"Browse item\" link in PDF exports showing as garbled text.",
+    "Every PDF export now carries the mi. mark top-left and the full miCollects logo in the footer of each page."
+  ] },
   { version: "1.5.7", date: "17 Nov 2026", items: [
     "Fixed your Name, Surname, Cellphone number and profile picture occasionally getting wiped out — a background sync could push this device's not-yet-loaded profile over your real one before it had finished loading it."
   ] },
@@ -878,6 +911,22 @@ function render() {
   $("#cOwned").textContent = state.items.filter(i => i.list === "owned").length;
   $("#cWish").textContent = state.items.filter(i => i.list === "wish").length;
   document.querySelectorAll(".nav button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === state.tab)));
+}
+
+/* Toggling one card's selection used to call the full render() -- rebuilding every card's HTML from
+   scratch on every single tap, which on a large collection was slow enough that a quick run of taps
+   while multi-selecting felt unresponsive (a tap seemed to do nothing, so it got tapped again, which
+   then undid it -- reported as items going missing from the selection). Flipping just that one card's
+   own class and refreshing the select bar's text/buttons is effectively instant regardless of
+   collection size. */
+function updateSelectBar() {
+  const visIds = visible().map(i => i.id);
+  const allVisSelected = visIds.length > 0 && visIds.every(id => state.selected.has(id));
+  $("#selectAllBtn").textContent = allVisSelected ? "Deselect all" : "Select all";
+  $("#selectCount").textContent = `${state.selected.size} selected`;
+  $("#selectShareBtn").disabled = state.selected.size === 0;
+  $("#selectBulkBtn").disabled = state.selected.size === 0;
+  $("#selectDeleteBtn").disabled = state.selected.size === 0;
 }
 
 /* ---------- Toast ---------- */
@@ -1684,9 +1733,14 @@ function openForm(item, convertTo) {
       <textarea id="f-desc" rows="3" placeholder="What it is, edition, size, features…">${val(it.description)}</textarea></div>
     <div class="field"><label for="f-notes">Notes</label>
       <textarea id="f-notes" rows="3" placeholder="${owned ? "Where you got it, edition, serial number…" : "Where to find it, sellers, what to look out for…"}">${val(it.notes)}</textarea></div>
-    ${customFields.map(f => `
+    ${customFields.map(f => {
+      const v = val(it.custom && it.custom[f.id]);
+      const attrs = f.type === "number" ? `type="number" inputmode="decimal" step="any"`
+        : f.type === "date" ? `type="date"` : `type="text" autocomplete="off"`;
+      return `
     <div class="field"><label for="cf-${f.id}">${esc(f.label)}</label>
-      <input id="cf-${f.id}" data-cfid="${f.id}" value="${val(it.custom && it.custom[f.id])}" autocomplete="off"></div>`).join("")}
+      <input id="cf-${f.id}" data-cfid="${f.id}" ${attrs} value="${v}"></div>`;
+    }).join("")}
     <div class="actions">
       <button class="btn primary" id="saveBtn">${convertTo === "owned" ? "Add to collection" : convertTo === "wish" ? "Move to wishlist" : "Save"}</button>
       <button class="btn ghost" id="cancelBtn">Cancel</button>
@@ -2410,8 +2464,11 @@ function accountTabHtml() {
       <div class="field"><label for="s-lname">Surname</label><input id="s-lname" value="${esc(settings.lastName)}" autocomplete="family-name"></div>
     </div>
     <div class="field"><label for="s-phone">Cellphone number</label>
-      <input id="s-phone" type="tel" inputmode="tel" value="${esc(settings.phone)}" autocomplete="tel" placeholder="e.g. 082 123 4567"></div>
-    <div class="actions"><button class="btn ghost" id="acctSaveBtn">Save details</button></div>
+      <div class="tel-row">
+        <button type="button" class="select-btn tel-code" id="s-phone-country"><span>${(() => { const c = COUNTRY_CODES.find(c => c[0] === settings.phoneCountry) || COUNTRY_CODES[0]; return `${c[2]} ${c[1]}`; })()}</span></button>
+        <input id="s-phone" type="tel" inputmode="tel" value="${esc(settings.phone)}" autocomplete="tel" placeholder="82 123 4567">
+      </div></div>
+    <div class="actions"><button class="btn primary" id="acctSaveBtn">Save details</button></div>
     <p class="hint" id="acctHint"></p>
     <h3>Password</h3>
     <p class="hint">Send a password reset link to ${esc(cloudUser.email)}.</p>
@@ -2429,8 +2486,8 @@ function generalTabHtml() {
     <div class="actions"><button class="btn ghost" id="syncBtn">Sync now</button></div>
     <p class="hint" id="authHint">${settings.lastSynced ? `Last synced ${esc(timeAgo(settings.lastSynced))}.` : ""}</p>` : ""}
     <h3>Currency</h3>
-    <div class="field"><label for="s-cur">Currency symbol</label>
-      <input id="s-cur" value="${esc(settings.currency)}" maxlength="4" autocomplete="off"></div>
+    <div class="field"><label for="s-cur">Currency</label>
+      <button type="button" class="select-btn" id="s-cur"><span>${esc((CURRENCY_OPTIONS.find(c => c[0] === settings.currency) || CURRENCY_OPTIONS[0])[1])}</span>${CHEVRON_SVG}</button></div>
     <h3>Backup</h3>
     <p class="hint">${cloudUser ? "Your collection already syncs to the cloud, but export a local copy now and then too." : "Export a backup file, or import one, to move your collection between devices."}</p>
     <div class="actions">
@@ -2477,18 +2534,21 @@ function listsTabHtml() {
 }
 
 const CF_SCOPE_LABEL = { owned: "Collection only", wish: "Wishlist only", both: "Both Collection and Wishlist" };
+const CF_TYPE_LABEL = { text: "Text", number: "Number", date: "Date" };
 function fieldsTabHtml() {
   const fields = settings.customFields || [];
   return `
-    <p class="hint">Your own text fields, shown on the item form for custom naming and values.</p>
+    <p class="hint">Your own fields, shown on the item form for custom naming and values.</p>
     <div class="cf-list">${fields.length ? fields.map(f => `
       <div class="cf-row">
-        <div class="cf-row-main"><span class="cf-row-label">${esc(f.label)}</span><span class="cf-row-scope">${esc(CF_SCOPE_LABEL[f.scope] || CF_SCOPE_LABEL.both)}</span></div>
+        <div class="cf-row-main"><span class="cf-row-label">${esc(f.label)}</span><span class="cf-row-scope">${esc(CF_TYPE_LABEL[f.type] || CF_TYPE_LABEL.text)} · ${esc(CF_SCOPE_LABEL[f.scope] || CF_SCOPE_LABEL.both)}</span></div>
         <button type="button" class="cf-x" data-del="${f.id}" aria-label="Remove ${esc(f.label)}">×</button>
       </div>`).join("") : `<p class="hint">No custom fields yet — add one below.</p>`}</div>
     <h3>Add a field</h3>
     <div class="field"><label for="cf-new-label">Title</label>
       <input id="cf-new-label" placeholder="e.g. Serial number" autocomplete="off"></div>
+    <div class="field"><label for="cf-new-type">Type</label>
+      <button type="button" class="select-btn" id="cf-new-type" value="text"><span>${esc(CF_TYPE_LABEL.text)}</span>${CHEVRON_SVG}</button></div>
     <div class="field"><label for="cf-new-scope">Show on</label>
       <button type="button" class="select-btn" id="cf-new-scope" value="both"><span>${esc(CF_SCOPE_LABEL.both)}</span>${CHEVRON_SVG}</button></div>
     <div class="actions"><button type="button" class="btn primary" id="cfAddBtn">Add field</button></div>`;
@@ -2534,6 +2594,9 @@ function openAccount() {
       settings.avatarUrl = ""; saveSettings(); await cloudPushSettings();
       toast("Profile picture removed"); render(); openAccount();
     });
+    $("#s-phone-country").addEventListener("click", () => openPicker("Country code", COUNTRY_CODES.map(c => [c[0], `${c[2]} ${c[3]} (${c[1]})`]), settings.phoneCountry, v => {
+      settings.phoneCountry = v; saveSettings(); openAccount();
+    }));
     $("#acctSaveBtn").addEventListener("click", async () => {
       settings.firstName = properCase($("#s-fname").value);
       settings.lastName = properCase($("#s-lname").value);
@@ -2713,18 +2776,32 @@ async function exportSummaryCsv({ n, pieces, totalPaid, total, avgPaid, avg, byV
    Colors are the light-theme palette from :root, since a PDF page is always light regardless of the
    app's current theme. */
 const PDF_INK = [15, 23, 42], PDF_BRASS = [37, 99, 235], PDF_MUTED = [100, 116, 139], PDF_SUNK = [241, 244, 248], PDF_LINE = [226, 232, 240];
+/* The actual mark/wordmark artwork, not hand-drawn text -- used in every PDF export's header (mark
+   only, top-left) and footer (full "miCollects" wordmark, centered), below. */
+const PDF_MARK_PNG = "data:image/png;base64,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";
+const PDF_WORDMARK_PNG = "data:image/png;base64,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";
 /* Draws the "mi"+"Collects" wordmark top-left, the given title beneath it, and today's date top-right
    -- returns the y cursor to continue drawing from. */
 function drawPdfHeader(doc, marginX, pageW, title) {
-  doc.setFont("helvetica", "bold"); doc.setFontSize(20);
-  doc.setTextColor(...PDF_INK); doc.text("mi", marginX, 20);
-  doc.setTextColor(...PDF_BRASS); doc.text("Collects", marginX + doc.getTextWidth("mi"), 20);
+  const markH = 10, markW = markH * (512 / 332);
+  doc.addImage(PDF_MARK_PNG, "PNG", marginX, 20 - markH + 2, markW, markH);
   let y = 20 + 18;
   doc.setTextColor(...PDF_INK); doc.setFontSize(16); doc.setFont("helvetica", "bold");
   doc.text(title, marginX, y);
   doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(...PDF_MUTED);
   doc.text(new Date().toLocaleDateString(), pageW - marginX, y, { align: "right" });
   return y + 10;
+}
+/* Stamps the real miCollects wordmark, centered, near the bottom of every page already drawn --
+   called once right before a doc is handed to shareOrDownload(), after all of its pages exist. */
+function drawPdfFooter(doc) {
+  const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
+  const wmH = 5, wmW = wmH * (773 / 246);
+  const n = doc.internal.getNumberOfPages();
+  for (let p = 1; p <= n; p++) {
+    doc.setPage(p);
+    doc.addImage(PDF_WORDMARK_PNG, "PNG", (pageW - wmW) / 2, pageH - 12, wmW, wmH);
+  }
 }
 function exportSummaryPdf({ n, pieces, totalPaid, total, avgPaid, avg, cats, brands, byValue }) {
   const { jsPDF } = window.jspdf;
@@ -2810,6 +2887,7 @@ function exportSummaryPdf({ n, pieces, totalPaid, total, avgPaid, avg, cats, bra
     y += rowH;
   });
 
+  drawPdfFooter(doc);
   const name = `micollects-summary-${new Date().toISOString().slice(0, 10)}.pdf`;
   shareOrDownload(name, doc.output("blob"), "application/pdf", "Collection summary (PDF)");
 }
@@ -2859,7 +2937,9 @@ async function exportItemsPdf(items) {
     if (it.rarity) colB.push(["Rarity", it.rarity]);
     if (owned && it.purchaseDate) colB.push(["Purchased", it.purchaseDate]);
     const metaRows = Math.max(colA.length, colB.length);
-    const rowH = Math.max(imgSize + 4, 11 + (sub ? 6 : 0) + (metaRows ? 3 + metaRows * metaLineH : 0) + 5);
+    const hasLink = typeof it.productUrl === "string" && /^https?:\/\//i.test(it.productUrl);
+    const linkH = hasLink ? metaLineH + (metaRows ? 0 : 3) : 0;
+    const rowH = Math.max(imgSize + 4, 11 + (sub ? 6 : 0) + (metaRows ? 3 + metaRows * metaLineH : 0) + linkH + 5);
 
     if (y + rowH > pageH - 15) { doc.addPage(); y = 20; }
     doc.setFillColor(...PDF_SUNK); doc.roundedRect(marginX, y, contentW, rowH, 3, 3, "F");
@@ -2895,10 +2975,22 @@ async function exportItemsPdf(items) {
         if (colA[i]) doc.text(fit(`${colA[i][0]}: ${colA[i][1]}`, colW, 8), textX, rowY);
         if (colB[i]) doc.text(fit(`${colB[i][0]}: ${colB[i][1]}`, colW, 8), col2X, rowY);
       }
+      ty += metaRows * metaLineH;
+    }
+    if (hasLink) {
+      ty += linkH;
+      // No unicode arrow here -- jsPDF's base Helvetica font only supports WinAnsi's ~256 characters,
+      // and a character outside that (like "→") made it fall back to a broken wide-spaced encoding.
+      const label = fit("Browse item", maxTextW, 8);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...PDF_BRASS);
+      doc.textWithLink(label, textX, ty, { url: it.productUrl });
+      doc.setDrawColor(...PDF_BRASS); doc.setLineWidth(0.2);
+      doc.line(textX, ty + 0.8, textX + doc.getTextWidth(label), ty + 0.8);
     }
     y += rowH + 4;
   });
 
+  drawPdfFooter(doc);
   const kind = owned ? "collection" : "wishlist";
   const name = `micollects-${kind}-${new Date().toISOString().slice(0, 10)}.pdf`;
   await shareOrDownload(name, doc.output("blob"), "application/pdf", `My miCollects ${kind}`);
@@ -2950,7 +3042,9 @@ function openSettings() {
   if (settingsTab === "general") {
     const syncBtn = $("#syncBtn");
     if (syncBtn) syncBtn.addEventListener("click", () => cloudPullAll());
-    $("#s-cur").addEventListener("input", e => { settings.currency = e.target.value; saveSettings(); render(); cloudPushSettings(); });
+    $("#s-cur").addEventListener("click", () => openPicker("Currency", CURRENCY_OPTIONS, settings.currency, v => {
+      settings.currency = v; saveSettings(); render(); cloudPushSettings(); openSettings();
+    }));
     $("#s-theme").addEventListener("click", () => openPicker("Theme", THEME_OPTIONS, settings.theme, v => {
       settings.theme = v; saveSettings(); applyTheme(); openSettings();
     }));
@@ -2996,14 +3090,17 @@ function openSettings() {
       if (e.key === "Enter") { e.preventDefault(); $(`[data-add="${key}"]`).click(); }
     }));
   } else if (settingsTab === "fields") {
-    const scopeBtn = $("#cf-new-scope");
+    const scopeBtn = $("#cf-new-scope"), typeBtn = $("#cf-new-type");
     scopeBtn.addEventListener("click", () => openPicker("Show on",
       Object.entries(CF_SCOPE_LABEL).map(([v, l]) => [v, l]), scopeBtn.value,
       v => { scopeBtn.value = v; scopeBtn.querySelector("span").textContent = CF_SCOPE_LABEL[v]; }));
+    typeBtn.addEventListener("click", () => openPicker("Field type",
+      Object.entries(CF_TYPE_LABEL).map(([v, l]) => [v, l]), typeBtn.value,
+      v => { typeBtn.value = v; typeBtn.querySelector("span").textContent = CF_TYPE_LABEL[v]; }));
     $("#cfAddBtn").addEventListener("click", () => {
       const label = $("#cf-new-label").value.trim(); if (!label) return;
       settings.customFields = settings.customFields || [];
-      settings.customFields.push({ id: uid(), label, scope: scopeBtn.value || "both" });
+      settings.customFields.push({ id: uid(), label, scope: scopeBtn.value || "both", type: typeBtn.value || "text" });
       saveSettings(); cloudPushSettings(); reopenSettingsKeepingScroll();
     });
     $("#cf-new-label").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#cfAddBtn").click(); } });
@@ -3069,9 +3166,16 @@ async function importBackup(e) {
 /* ---------- Events ---------- */
 /* Long-press (hold ~500ms without moving) on a card enters multi-select mode with that card
    pre-selected -- Share and Delete are both available from there, on either tab. A synthetic
-   "click" still fires on release after a long-press in most browsers; longPressFired lets the
-   click handler below swallow that one so it doesn't also open the item. */
-let pressTimer = null, longPressFired = false, pressStart = null;
+   "click" still fires on release after a long-press in most browsers; longPressId lets the click
+   handler below swallow that one specific card's click so it doesn't also open the item.
+   Scoped to that one card's id, rather than a plain true/false flag, on purpose -- a flag swallows
+   whatever click happens to come next no matter which card it's on, and the browser doesn't always
+   end up firing that trailing click at all (depends on how it reads the release), which left the
+   flag stuck true and silently ate the very next, unrelated tap on a different card (reported as
+   "missing items in my selection after clicking on them"). Scoping it to the card's id means a
+   missing trailing click can, at worst, leave that one card's own next tap a no-op -- it can never
+   swallow a tap aimed at a different card. */
+let pressTimer = null, longPressId = null, pressStart = null;
 const LONG_PRESS_MS = 500, MOVE_CANCEL_PX = 10;
 function cancelLongPress() { clearTimeout(pressTimer); pressTimer = null; pressStart = null; }
 $("#grid").addEventListener("pointerdown", e => {
@@ -3079,7 +3183,7 @@ $("#grid").addEventListener("pointerdown", e => {
   const c = e.target.closest(".card"); if (!c) return;
   pressStart = { x: e.clientX, y: e.clientY };
   pressTimer = setTimeout(() => {
-    longPressFired = true;
+    longPressId = c.dataset.id;
     enterSelectMode([c.dataset.id]);
     if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
   }, LONG_PRESS_MS);
@@ -3091,7 +3195,11 @@ $("#grid").addEventListener("pointermove", e => {
 $("#grid").addEventListener("pointerup", cancelLongPress);
 $("#grid").addEventListener("pointercancel", cancelLongPress);
 $("#grid").addEventListener("click", e => {
-  if (longPressFired) { longPressFired = false; return; }
+  if (longPressId != null) {
+    const sameCard = longPressId === (e.target.closest(".card") || {}).dataset?.id;
+    longPressId = null;
+    if (sameCard) return;
+  }
   if (e.target.closest("[data-add]")) { openForm(null); return; }
   const got = e.target.closest("[data-got]");
   if (got && !state.selecting) { e.stopPropagation(); openForm(state.items.find(i => i.id === got.dataset.got), "owned"); return; }
@@ -3099,8 +3207,11 @@ $("#grid").addEventListener("click", e => {
   if (!c) return;
   if (state.selecting && c.classList.contains("selecting")) {
     const id = c.dataset.id;
-    if (state.selected.has(id)) state.selected.delete(id); else state.selected.add(id);
-    render();
+    const nowSelected = !state.selected.has(id);
+    if (nowSelected) state.selected.add(id); else state.selected.delete(id);
+    c.classList.toggle("selected", nowSelected);
+    c.setAttribute("aria-pressed", String(nowSelected));
+    updateSelectBar();
     return;
   }
   if (!state.selecting) openForm(state.items.find(i => i.id === c.dataset.id));
@@ -3210,13 +3321,18 @@ const ptrBlocked = () => sheetOpen || pickerOpen || state.selecting || !$("#welc
    actually hid again once shown. The default opacity:0 + off-screen translateY in the CSS rule
    already fully hides this with nothing further needed; these two functions only ever adjust that
    same opacity/transform. */
+// Pulling tracked the finger 1:1, so a quick, short pull already snapped the icon down to its
+// full, rotated "ready" position -- damping it (the icon travels ~0.55px per finger px) gives it
+// resistance instead, same idea as the rubber-banding most native pull-to-refresh UIs use.
+const PTR_DAMP = 0.55;
 function ptrSetProgress(dy) {
   const el = $("#ptrIndicator");
-  const p = Math.min(1, dy / PTR_THRESHOLD);
-  const travel = Math.min(dy, PTR_THRESHOLD + 16);
+  const damped = dy * PTR_DAMP;
+  const p = Math.min(1, damped / PTR_THRESHOLD);
+  const travel = Math.min(damped, PTR_THRESHOLD + 16);
   el.style.opacity = Math.min(1, p * 1.4);
   el.style.transform = `translateX(-50%) translateY(${travel - 40}px) rotate(${p * 360}deg)`;
-  el.classList.toggle("ptr-ready", dy >= PTR_THRESHOLD);
+  el.classList.toggle("ptr-ready", damped >= PTR_THRESHOLD);
 }
 function ptrReset() {
   const el = $("#ptrIndicator");
