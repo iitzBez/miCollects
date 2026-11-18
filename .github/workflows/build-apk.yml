@@ -28,6 +28,12 @@ jobs:
           if [ ! -d android ]; then npx cap add android; fi
           npx cap sync android
 
+      - name: Add custom DownloadsSaver plugin
+        run: |
+          mkdir -p android/app/src/main/java/za/micollects/app
+          cp android-ext/DownloadsSaverPlugin.java android/app/src/main/java/za/micollects/app/DownloadsSaverPlugin.java
+          cp android-ext/MainActivity.java android/app/src/main/java/za/micollects/app/MainActivity.java
+
       - name: Generate app icon from resources/
         run: npx capacitor-assets generate --android
 

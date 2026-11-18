@@ -676,8 +676,11 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.9";
+const APP_VERSION = "1.6.10";
 const WHATS_NEW = [
+  { version: "1.6.10", date: "18 Nov 2026", items: [
+    "Export (PDF/CSV) and Backup now save an actual, findable copy into your phone's Downloads folder again, same as before, as well as still bringing up the share sheet — the previous fix only made the share sheet work, with no persistent copy anywhere you could find it."
+  ] },
   { version: "1.6.9", date: "18 Nov 2026", items: [
     "Fixed Export (PDF/CSV) and Backup still failing with \"FILE_NOTCREATED\" — the Documents folder they saved into is a legacy public-storage location modern Android blocks apps from writing to directly, no matter the permissions. They now save to the app's own storage first, then hand off to the share sheet, which includes a \"Save to...\" option for Files/Drive/Downloads."
   ] },
@@ -2888,10 +2891,18 @@ async function shareOrDownload(name, blob, mimeType, shareTitle) {
       // reach at all once an app targets scoped storage (Android 10+): every write there failed with
       // FILE_NOTCREATED regardless of permissions or recursive. The app's own cache dir needs no
       // permission on any Android version and is already covered by Capacitor's own FileProvider
-      // config, so Share.share() below can still turn it into a real share sheet (including a "Save
-      // to..." option that reaches Files/Drive/Downloads, which is what Documents was trying to do).
+      // config, so Share.share() below can still turn it into a real share sheet.
+      // DownloadsSaver (android-ext/DownloadsSaverPlugin.java, a custom plugin -- no published one
+      // doing this is compatible with this project's Capacitor version) puts an actual, independent
+      // copy in the Downloads folder via MediaStore, the only permission-free way left to land a file
+      // somewhere the user can actually find it on-device.
+      let savedToDownloads = false;
+      if (P.DownloadsSaver) {
+        try { await withTimeout(P.DownloadsSaver.saveToDownloads({ data: base64, fileName: name, mimeType }), 20000); savedToDownloads = true; }
+        catch (e) {}
+      }
       const r = await withTimeout(P.Filesystem.writeFile({ path: name, data: base64, directory: "CACHE", recursive: true }), 20000);
-      toast(`Saved ${name}`);
+      toast(savedToDownloads ? `Saved ${name} to Downloads` : `Saved ${name}`);
       if (P.Share) { try { await withTimeout(P.Share.share({ title: shareTitle, url: r.uri, dialogTitle: `Share ${name}` }), 20000); } catch (e) {} }
       return;
     } catch (e) { if (/cancel/i.test(String(e && e.message))) return; throw e; }
@@ -3249,8 +3260,21 @@ async function exportBackup() {
   const P = window.Capacitor && window.Capacitor.Plugins;
   if (P && P.Filesystem) {
     try {
+      let savedToDownloads = false;
+      if (P.DownloadsSaver) {
+        try {
+          const base64 = await new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onload = () => res(r.result.split(",")[1]);
+            r.onerror = rej;
+            r.readAsDataURL(new Blob([data], { type: "application/json" }));
+          });
+          await P.DownloadsSaver.saveToDownloads({ data: base64, fileName: name, mimeType: "application/json" });
+          savedToDownloads = true;
+        } catch (e) {}
+      }
       const r = await P.Filesystem.writeFile({ path: name, data, directory: "CACHE", encoding: "utf8", recursive: true });
-      toast(`Saved ${name}`);
+      toast(savedToDownloads ? `Saved ${name} to Downloads` : `Saved ${name}`);
       if (P.Share) { try { await P.Share.share({ title: "miCollects backup", url: r.uri, dialogTitle: "Share your backup" }); } catch (e) {} }
       return;
     } catch (e) { if (/cancel/i.test(String(e && e.message))) return; }
