@@ -654,8 +654,13 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.5.9";
+const APP_VERSION = "1.6.0";
 const WHATS_NEW = [
+  { version: "1.6.0", date: "18 Nov 2026", items: [
+    "Image Recognition now also fills in Series, Size, Condition and Rarity when the photos show them, not just name/brand/category.",
+    "Fixed Image Recognition's gallery picker only letting you choose one photo at a time — you can pick up to 3 at once again.",
+    "Fixed a case where Image Recognition could hang indefinitely instead of showing an error."
+  ] },
   { version: "1.5.9", date: "18 Nov 2026", items: [
     "Fixed Image Recognition failing on every photo — it was pinned to a specific Gemini model name that Google had moved on from. It now asks Google which model your key can actually use, so this shouldn't need another update when that happens again."
   ] },
@@ -1163,62 +1168,104 @@ const CAM_MAX = 3;
 const GEMINI_PROMPT = "You are helping catalog a physical collectible (e.g. a diecast car, action figure, trading "
   + "card, comic, toy, model kit) from photos someone just took of their own item. There may be up to three photos: "
   + "typically the item itself, then the back of it, then a price tag or receipt — but treat them as photos of the "
-  + "same single item regardless of what each one shows. Identify the item as specifically as you can, and read any "
-  + "price tag or sticker if one is visible. Reply with ONLY a compact JSON object (no markdown, no commentary) with "
-  + "exactly these keys: name (the specific product/item name, without the brand), brand (manufacturer or brand "
-  + "name, empty string if unclear), category (a short general category like \"Diecast Cars\", \"Trading Cards\" or "
-  + "\"Action Figures\", empty string if unclear), description (one short sentence describing it), price (the "
-  + "numeric price read from a tag/sticker/receipt if one of the photos shows one, otherwise null — a number only, "
-  + "no currency symbol), search (a short, specific phrase someone could use to search for a clean product photo of "
-  + "this exact item online, combining brand and name). If you cannot identify the item at all, return the text "
-  + "fields as empty strings and price as null.";
+  + "same single item regardless of what each one shows. Identify the item as specifically, and fill in as many of "
+  + "the fields below as you can tell from the photos, rather than leaving them empty when a reasonable read is "
+  + "possible — but never guess at something the photos don't actually show. Read any price tag or sticker if one "
+  + "is visible. Reply with ONLY a compact JSON object (no markdown, no commentary) with exactly these keys:\n"
+  + "name (the specific product/item name, without the brand), brand (manufacturer or brand name, empty string if "
+  + "unclear), category (a short general category like \"Diecast Cars\", \"Trading Cards\" or \"Action Figures\", "
+  + "empty string if unclear), series (the specific line, set or collection it's from, e.g. \"Hot Wheels Mainline\" "
+  + "or \"Base Set\", empty string if not shown), scale (size/scale/piece-count exactly as printed, e.g. \"1/64\" "
+  + "or \"500 pieces\", empty string if not shown), condition (your best read of its physical condition from the "
+  + "photos, as EXACTLY one of: \"\", \"Sealed / new in box\", \"Mint\", \"Near mint\", \"Excellent\", \"Good\", "
+  + "\"Fair\", \"Poor\" — use the empty string if the photos don't show enough to judge), rarity (if the packaging "
+  + "or card itself states a rarity/edition tier, as EXACTLY one of: \"\", \"Common\", \"Uncommon\", \"Rare\", "
+  + "\"Ultra rare\", \"One of a kind\" — otherwise the empty string; never infer this from general desirability, "
+  + "only from an explicit label), description (one short sentence describing it), price (the numeric price read "
+  + "from a tag/sticker/receipt if one of the photos shows one, otherwise null — a number only, no currency "
+  + "symbol), search (a short, specific phrase someone could use to search for a clean product photo of this exact "
+  + "item online, combining brand and name). If you cannot identify the item at all, return the text fields as "
+  + "empty strings and price as null.";
 
-/* Google retires Gemini model names on a rolling schedule -- hardcoding one (twice, now) has meant
-   this silently breaking every few months with no way to fix it short of a code update and a new
-   release. Ask Google's own ListModels endpoint what this key can actually use instead, and pick a
-   "flash" one that isn't a preview/experimental build (those can disappear without notice); that
-   self-heals whenever models get renamed or retired. Cached per key for the rest of the session so
-   this doesn't re-run on every single recognise. */
+/* Pinning this to one specific versioned model name (twice, now) has silently broken every few
+   months as Google retired it -- and testing against a real key just showed why pinning to ANY
+   single name, versioned or not, isn't enough: ListModels still listed gemini-2.5-flash as
+   supporting generateContent, but actually calling it 404'd regardless. "-latest" is Google's own
+   perpetual alias for exactly this -- always the current recommended model, never itself retired --
+   so try that first, then its lighter sibling (which held up when "-latest" briefly 503'd under
+   load in that same test), and only fall back to asking ListModels directly if Google ever drops
+   both aliases entirely. */
+const GEMINI_MODEL_ALIASES = ["gemini-flash-latest", "gemini-flash-lite-latest"];
 let geminiModelCache = null, geminiModelCacheKey = null;
 async function geminiHttp(method, url, body) {
-  const H = nativeHttp();
-  const opts = { url, connectTimeout: 15000, readTimeout: 30000 };
-  if (body) { opts.headers = { "Content-Type": "application/json" }; opts.data = body; }
-  if (H) {
-    const r = await (method === "POST" ? H.post(opts) : H.get(opts));
-    if (r.status >= 400) throw Object.assign(new Error("status"), { status: r.status });
-    return typeof r.data === "string" ? JSON.parse(r.data) : r.data;
-  }
-  const r = await fetch(url, body ? { method, headers: { "Content-Type": "application/json" }, body } : { method });
-  if (!r.ok) throw Object.assign(new Error("status"), { status: r.status });
-  return r.json();
+  // Testing this against the real API just hit a request that never resolved at all -- the native
+  // path's own connectTimeout/readTimeout should cover that, but the plain-fetch fallback had no
+  // timeout whatsoever, and a hung network call with nothing to ever reject it is exactly what the
+  // original "hangs and does nothing" report described. A hard outer ceiling here means this can
+  // now never do that again, on either path, no matter what's actually stalling.
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error("timeout"), { timedOut: true })), 35000));
+  const run = (async () => {
+    const H = nativeHttp();
+    const opts = { url, connectTimeout: 15000, readTimeout: 30000 };
+    if (body) { opts.headers = { "Content-Type": "application/json" }; opts.data = body; }
+    if (H) {
+      const r = await (method === "POST" ? H.post(opts) : H.get(opts));
+      if (r.status >= 400) throw Object.assign(new Error("status"), { status: r.status });
+      return typeof r.data === "string" ? JSON.parse(r.data) : r.data;
+    }
+    const controller = new AbortController();
+    const killer = setTimeout(() => controller.abort(), 30000);
+    try {
+      const r = await fetch(url, Object.assign(body ? { method, headers: { "Content-Type": "application/json" }, body } : { method }, { signal: controller.signal }));
+      if (!r.ok) throw Object.assign(new Error("status"), { status: r.status });
+      return await r.json();
+    } finally { clearTimeout(killer); }
+  })();
+  return Promise.race([run, timeout]);
 }
 async function pickGeminiModel(key) {
   if (geminiModelCache && geminiModelCacheKey === key) return geminiModelCache;
-  const data = await geminiHttp("GET", `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`);
+  let data;
+  try { data = await geminiHttp("GET", `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`); }
+  catch (e) { e.stage = "list-models"; throw e; }
   const usable = (data.models || []).filter(m => (m.supportedGenerationMethods || []).includes("generateContent"));
   const pick = usable.find(m => /flash/i.test(m.name) && !/preview|exp/i.test(m.name)) || usable.find(m => /flash/i.test(m.name)) || usable[0];
-  if (!pick) throw new Error("no-model");
+  if (!pick) throw Object.assign(new Error("no-model"), { stage: "list-models" });
   geminiModelCache = pick.name.replace(/^models\//, ""); geminiModelCacheKey = key;
   return geminiModelCache;
 }
 async function recognizePhotos(base64s) {
   const key = (settings.geminiKey || "").trim();
   if (!key) throw Object.assign(new Error("No Gemini API key set"), { code: "no-key" });
-  const model = await pickGeminiModel(key);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
   const body = JSON.stringify({
     contents: [{ parts: [{ text: GEMINI_PROMPT }, ...base64s.map(data => ({ inline_data: { mime_type: "image/jpeg", data } }))] }],
     generationConfig: { responseMimeType: "application/json" }
   });
-  const data = await geminiHttp("POST", url, body);
+  let data, lastErr;
+  for (const model of GEMINI_MODEL_ALIASES) {
+    try { data = await geminiHttp("POST", `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, body); lastErr = null; break; }
+    catch (e) { e.stage = "generate-content"; e.model = model; lastErr = e; if (e.status !== 404 && e.status !== 503) break; }
+  }
+  if (lastErr) {
+    // Both aliases are gone or unreachable -- last resort, ask what this key can actually use.
+    try {
+      const model = await pickGeminiModel(key);
+      data = await geminiHttp("POST", `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, body);
+    } catch (e2) { e2.stage = e2.stage || "generate-content"; throw e2; }
+  }
   const parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
   const raw = parts.map(p => p.text || "").join("").trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
   if (!raw) throw new Error("empty");
   const parsed = JSON.parse(raw);
   const str = v => String(v ?? "").trim();
+  // Gemini is asked to use these exact labels for condition/rarity, but models don't always follow
+  // an enum instruction to the letter -- fall back to "" (unset) rather than show a stray value the
+  // picker doesn't recognise and can't display properly.
+  const enumOrBlank = (v, allowed) => { const s = str(v); return allowed.includes(s) ? s : ""; };
   return {
     name: str(parsed.name), brand: str(parsed.brand), category: str(parsed.category),
+    series: str(parsed.series), scale: str(parsed.scale),
+    condition: enumOrBlank(parsed.condition, CONDITIONS), rarity: enumOrBlank(parsed.rarity, RARITIES),
     description: str(parsed.description).slice(0, 1500), search: str(parsed.search),
     price: parsePrice(parsed.price)
   };
@@ -1249,15 +1296,32 @@ function wireCamera(it, paintPhotos, dup) {
     if (!P || !P.Camera) { show("Adding a photo only works in the Android app, not this preview."); return; }
     const source = await pickPhotoSource();
     if (!source) return;
+    const remaining = CAM_MAX - camBatch.length;
+    if (remaining <= 0) return;
     btn.disabled = true;
     try {
-      const shot = await P.Camera.getPhoto({ quality: 80, resultType: "base64", source, saveToGallery: false });
-      if (!shot || !shot.base64String) return;
-      let compressed;
-      try { compressed = await compressSrc(`data:image/${shot.format || "jpeg"};base64,${shot.base64String}`); }
-      catch (e) { show(e.message || "That photo couldn’t be used."); return; }
-      if (camBatch.length === 0) photos.unshift(compressed); else if (photos.length < MAXP) photos.push(compressed);
-      camBatch.push(compressed);
+      const addOne = compressed => {
+        if (camBatch.length === 0) photos.unshift(compressed); else if (photos.length < MAXP) photos.push(compressed);
+        camBatch.push(compressed);
+      };
+      // Gallery picks can be multiple (up to however many of the 3 recognition slots are left) --
+      // getPhoto() only ever returns one, so use pickImages() there instead, same fix as the regular
+      // "Add photos" tiles. A camera shot is still one at a time; that's inherent to taking a photo.
+      if (source === "PHOTOS" && P.Camera.pickImages) {
+        const { photos: picked } = await P.Camera.pickImages({ quality: 80, limit: remaining });
+        let got = 0;
+        for (const p of (picked || []).slice(0, remaining)) {
+          try { addOne(await compressSrc(p.webPath)); got++; } catch (e) {}
+        }
+        if (!got) return;
+      } else {
+        const shot = await P.Camera.getPhoto({ quality: 80, resultType: "base64", source, saveToGallery: false });
+        if (!shot || !shot.base64String) return;
+        let compressed;
+        try { compressed = await compressSrc(`data:image/${shot.format || "jpeg"};base64,${shot.base64String}`); }
+        catch (e) { show(e.message || "That photo couldn’t be used."); return; }
+        addOne(compressed);
+      }
       paintPhotos();
       doneBtn.hidden = false; doneBtn.disabled = false; doneBtn.textContent = "Recognise photos";
       if (camBatch.length >= CAM_MAX) { btn.hidden = true; show(`Photo ${camBatch.length} of ${CAM_MAX} added. Tap Recognise to fill in the details.`); }
@@ -1273,20 +1337,28 @@ function wireCamera(it, paintPhotos, dup) {
     try {
       const d = await recognizePhotos(camBatch.map(p => p.split(",")[1]));
       const set = (id, v) => { const el = document.getElementById(id); if (el && v) { el.value = v; el.dispatchEvent(new Event("input")); } };
-      set("f-name", d.name); set("f-brand", d.brand); set("f-cat", d.category); set("f-desc", d.description);
+      // f-rarity/f-cond are select-btns, not plain inputs -- they only show a value typed into their
+      // own .value property if the visible <span> is updated too, the same way their own picker does.
+      const setSelectBtn = (id, v) => { const el = document.getElementById(id); if (el && v) { el.value = v; const span = el.querySelector("span"); if (span) span.textContent = v; } };
+      set("f-name", d.name); set("f-brand", d.brand); set("f-cat", d.category); set("f-series", d.series); set("f-scale", d.scale); set("f-desc", d.description);
+      setSelectBtn("f-cond", d.condition); setSelectBtn("f-rarity", d.rarity);
       if (d.price != null) { if (it.list === "owned") { set("f-paid", d.price); set("f-value", d.price); } else set("f-target", d.price); }
       dup();
-      const filled = [d.name && "name", d.brand && "brand", d.category && "category", d.description && "description", d.price != null && "price"].filter(Boolean);
+      const filled = [d.name && "name", d.brand && "brand", d.category && "category", d.series && "series", d.scale && "size",
+        d.condition && "condition", d.rarity && "rarity", d.description && "description", d.price != null && "price"].filter(Boolean);
       if (!filled.length) { show("Couldn’t make out what this is from the photos. Fill in the details yourself."); doneBtn.disabled = false; doneBtn.textContent = "Recognise photos"; return; }
       btn.hidden = true; doneBtn.hidden = true;
       hint.hidden = false;
       hint.innerHTML = `Filled in ${esc(listJoin(filled))} from your photos. Check the details, then save.`
         + (d.search ? ` <a href="https://www.google.com/search?tbm=isch&q=${encodeURIComponent(d.search)}" target="_blank" rel="noopener">Search for a clean photo online</a> if you’d rather use one — paste its page link above and tap Fetch.` : "");
     } catch (e) {
+      console.error("recognizePhotos failed", e && e.stage, e && e.model, e);
       show(e && e.code === "no-key" ? "Add a free Gemini API key in Settings to auto-fill the details from your photos."
-        : e && e.status === 404 ? "The recognition model isn’t available any more (Google retired it) — this needs a code update."
+        : e && e.timedOut ? "The recognition service took too long to respond. Check your connection and try again."
+        : e && e.status === 404 && e.stage === "list-models" ? "Couldn’t get your account’s model list from Google (error 404)."
+        : e && e.status === 404 ? `The recognition model (${e.model || "unknown"}) isn’t available any more (Google retired it) — this needs a code update.`
         : e && e.status === 400 ? "The recognition service rejected the API key. Check it in Settings."
-        : e && e.status ? `The recognition service refused the request (error ${e.status}).`
+        : e && e.status ? `The recognition service refused the request (error ${e.status}, ${e.stage || "unknown stage"}).`
         : "Couldn’t reach the recognition service. Check your connection.");
       doneBtn.disabled = false; doneBtn.textContent = "Recognise photos";
     } finally { btn.disabled = false; }
