@@ -290,6 +290,28 @@ input.has-marquee::placeholder{color:transparent}
 .btn{min-height:48px;padding:0 20px;border-radius:12px;font-weight:650;cursor:pointer;border:1px solid transparent;display:inline-flex;align-items:center;justify-content:center;gap:8px}
 .btn.primary{background:var(--brass);color:var(--brass-ink);flex:1}
 .btn.ghost{background:transparent;border-color:var(--line)}
+/* A single wave of Google's own four brand colors chasing around the button's edge, trailed by a
+   gap -- a plain "ghost" button (transparent, faint border) was easy to miss right after a photo
+   upload, buried among everything else on the form; this is deliberately the one spot in the app
+   that borrows an outside brand's colors rather than its own, specifically to read as "this is the
+   Google-powered action". A continuous fully-colored ring that just hue-shifted read as a static
+   rainbow, not a moving wave -- leaving most of the ring transparent, with the colors only inside
+   one travelling arc, is what actually reads as a wave circling round. Animates the gradient's own
+   angle (a registered custom property), not a transform:rotate() on the masked box itself -- rotating
+   the box was the first attempt, and for a wide rectangular button (not a square icon) that span its
+   corners out in a wide loop away from the button on every spin, since a rotated rectangle's corners
+   sweep along its diagonal, not its edge. */
+@property --ai-glow-angle{syntax:'<angle>';inherits:false;initial-value:0deg}
+.btn.ai-glow{position:relative;border-color:transparent}
+.btn.ai-glow::before{
+  content:"";position:absolute;inset:-3px;border-radius:inherit;padding:3px;pointer-events:none;
+  background:conic-gradient(from var(--ai-glow-angle),
+    transparent 0deg,#4285F4 20deg,#EA4335 80deg,#FBBC05 140deg,#34A853 190deg,transparent 215deg,transparent 360deg);
+  -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+  animation:googleRingSpin 3.6s linear infinite;
+}
+@keyframes googleRingSpin{to{--ai-glow-angle:360deg}}
 .btn.disabled{opacity:.4;pointer-events:none}
 .done-row{margin-top:22px;justify-content:center}
 .done-row .btn{flex:none;min-height:48px;padding:0 44px}
@@ -654,8 +676,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.6.1";
 const WHATS_NEW = [
+  { version: "1.6.1", date: "18 Nov 2026", items: [
+    "The \"Recognise photos\" button now has a Google-colors wave animated around it once a photo's added, so it's easier to spot.",
+    "Fixed Category/Series/Brand/Size suggestion dropdowns staying stuck open after Image Recognition or Add using URL filled them in, hiding the fields underneath."
+  ] },
   { version: "1.6.0", date: "18 Nov 2026", items: [
     "Image Recognition now also fills in Series, Size, Condition and Rarity when the photos show them, not just name/brand/category.",
     "Fixed Image Recognition's gallery picker only letting you choose one photo at a time — you can pick up to 3 at once again.",
@@ -1323,7 +1349,7 @@ function wireCamera(it, paintPhotos, dup) {
         addOne(compressed);
       }
       paintPhotos();
-      doneBtn.hidden = false; doneBtn.disabled = false; doneBtn.textContent = "Recognise photos";
+      doneBtn.hidden = false; doneBtn.disabled = false; doneBtn.textContent = "Recognise photos"; doneBtn.classList.add("ai-glow");
       if (camBatch.length >= CAM_MAX) { btn.hidden = true; show(`Photo ${camBatch.length} of ${CAM_MAX} added. Tap Recognise to fill in the details.`); }
       else { btn.textContent = "Add Another Photo"; show(`Photo ${camBatch.length} of ${CAM_MAX} added — add the back or a price tag, or tap Recognise to fill in details now.`); }
     } catch (e) { if (!/cancel/i.test(String(e && e.message))) show("Couldn’t get that photo."); }
@@ -1333,7 +1359,7 @@ function wireCamera(it, paintPhotos, dup) {
   doneBtn.addEventListener("click", async () => {
     if (!camBatch.length) return;
     if (!(settings.geminiKey || "").trim()) { show("Add a free Gemini API key in Settings to auto-fill the details from your photos."); return; }
-    btn.disabled = true; doneBtn.disabled = true; doneBtn.textContent = "Recognising…"; show("Looking at the photos…");
+    btn.disabled = true; doneBtn.disabled = true; doneBtn.textContent = "Recognising…"; doneBtn.classList.remove("ai-glow"); show("Looking at the photos…");
     try {
       const d = await recognizePhotos(camBatch.map(p => p.split(",")[1]));
       const set = (id, v) => { const el = document.getElementById(id); if (el && v) { el.value = v; el.dispatchEvent(new Event("input")); } };
@@ -1343,10 +1369,11 @@ function wireCamera(it, paintPhotos, dup) {
       set("f-name", d.name); set("f-brand", d.brand); set("f-cat", d.category); set("f-series", d.series); set("f-scale", d.scale); set("f-desc", d.description);
       setSelectBtn("f-cond", d.condition); setSelectBtn("f-rarity", d.rarity);
       if (d.price != null) { if (it.list === "owned") { set("f-paid", d.price); set("f-value", d.price); } else set("f-target", d.price); }
+      closeAllSuggestLists();
       dup();
       const filled = [d.name && "name", d.brand && "brand", d.category && "category", d.series && "series", d.scale && "size",
         d.condition && "condition", d.rarity && "rarity", d.description && "description", d.price != null && "price"].filter(Boolean);
-      if (!filled.length) { show("Couldn’t make out what this is from the photos. Fill in the details yourself."); doneBtn.disabled = false; doneBtn.textContent = "Recognise photos"; return; }
+      if (!filled.length) { show("Couldn’t make out what this is from the photos. Fill in the details yourself."); doneBtn.disabled = false; doneBtn.textContent = "Recognise photos"; doneBtn.classList.add("ai-glow"); return; }
       btn.hidden = true; doneBtn.hidden = true;
       hint.hidden = false;
       hint.innerHTML = `Filled in ${esc(listJoin(filled))} from your photos. Check the details, then save.`
@@ -1360,7 +1387,7 @@ function wireCamera(it, paintPhotos, dup) {
         : e && e.status === 400 ? "The recognition service rejected the API key. Check it in Settings."
         : e && e.status ? `The recognition service refused the request (error ${e.status}, ${e.stage || "unknown stage"}).`
         : "Couldn’t reach the recognition service. Check your connection.");
-      doneBtn.disabled = false; doneBtn.textContent = "Recognise photos";
+      doneBtn.disabled = false; doneBtn.textContent = "Recognise photos"; doneBtn.classList.add("ai-glow");
     } finally { btn.disabled = false; }
   });
 }
@@ -1539,10 +1566,13 @@ async function fillFromUrl(it, paintPhotos, dup) {
     }
     const d = extractProduct(page.html, page.finalUrl);
     const set = (id, v) => { const el = document.getElementById(id); if (el && v != null && v !== "") { el.value = v; el.dispatchEvent(new Event("input")); } };
-    set("f-name", d.name); set("f-brand", d.brand); set("f-cat", d.category); set("f-desc", d.description); set("f-cond", d.condition);
+    // f-cond is a select-btn, not a plain input -- same fix as Image Recognition's own fields below.
+    const setSelectBtn = (id, v) => { const el = document.getElementById(id); if (el && v) { el.value = v; const span = el.querySelector("span"); if (span) span.textContent = v; } };
+    set("f-name", d.name); set("f-brand", d.brand); set("f-cat", d.category); set("f-desc", d.description); setSelectBtn("f-cond", d.condition);
     if (d.price != null) {
       if (it.list === "owned") { set("f-paid", d.price); set("f-value", d.listPrice ?? d.price); } else set("f-target", d.price);
     }
+    closeAllSuggestLists();
     let notedUrl = false;
     const notesEl = $("#f-notes");
     if (notesEl && !notesEl.value.trim()) {
@@ -1660,6 +1690,12 @@ function addPasswordToggles(root) {
    list is always read fresh from predefinedList(fieldKey) rather than passed in once, so an
    add/delete right here in the dropdown (or from Settings > Lists, if that's open elsewhere) is
    reflected immediately without re-wiring the field. */
+/* Filling a field programmatically (Image Recognition, Add using URL) sets .value and fires its own
+   "input" event so the field re-renders normally -- but that's also what opens this dropdown while
+   typing, and it only ever closes again on blur. An input that was never focused never blurs, so the
+   dropdown was getting stuck open over whatever's below it. Called right after any such batch of
+   fills to close every one of them, regardless of which fields that fill touched. */
+function closeAllSuggestLists() { document.querySelectorAll(".ac-list").forEach(el => { el.hidden = true; el.innerHTML = ""; }); }
 function wireSuggest(inputId, listId, fieldKey) {
   const input = $("#" + inputId), list = $("#" + listId);
   let active = -1;
