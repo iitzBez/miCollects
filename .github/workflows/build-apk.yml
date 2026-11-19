@@ -1,8 +1,9 @@
+# Manual-only: the APK is retired as a distribution channel (the website at micollects.co.za / the
+# Cloudflare Pages deploy now covers mobile and desktop both), but this is left in place -- run it by
+# hand (Actions tab > Build APK > Run workflow) if a one-off debug build is ever needed again.
 name: Build APK
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:

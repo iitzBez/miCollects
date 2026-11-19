@@ -1,22 +1,24 @@
 # miCollects: collectibles and wishlist
 
-The whole app lives in `www/index.html`. Capacitor wraps it into an Android APK.
-Data is stored on the phone (IndexedDB). Use Settings > Export backup regularly.
+The whole app lives in `www/index.html` -- a single-page web app, deployed as the
+website at [micollects.co.za](https://micollects.co.za) (via Cloudflare Pages,
+auto-deployed from `main`). That's the primary, actively maintained build, for
+both desktop and mobile browsers. Data syncs to the cloud once signed in.
 
-## Option A: build in the cloud (no Android Studio needed)
-1. Create a new GitHub repo and push this folder to the `main` branch.
-2. Open the repo's Actions tab and wait for "Build APK" to finish (about 5 minutes).
-3. Open the finished run, download `micollects-apk`, unzip it, copy `app-debug.apk` to your phone and install it
-   (allow "Install unknown apps" for your file manager or browser when Android asks).
+## APK (retired)
+Capacitor can still wrap `www/index.html` into an Android APK, but this is no
+longer built or distributed automatically -- the website now covers mobile too.
+The "Build APK" GitHub Actions workflow is manual-only (Actions tab > Build APK
+> Run workflow) if a one-off debug build is ever needed again.
 
-## Option B: build locally
-Needs Node 20+ and Android Studio (with JDK 17). Do NOT use sudo for any of these commands.
+To build one locally instead: Node 20+ and Android Studio (with JDK 17), no sudo.
 
     npm install
     npx cap add android
+    npx cap sync android
     npx cap open android
 
 In Android Studio: Build > Build App Bundle(s) / APK(s) > Build APK(s).
 
 ## Changing the app
-Edit `www/index.html`, then run `npx cap sync android` (no sudo) or just push to GitHub again.
+Edit `www/index.html` and push to `main` -- Cloudflare Pages redeploys automatically.
