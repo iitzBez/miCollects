@@ -97,6 +97,13 @@ h1{font:800 clamp(22px,6.5vw,40px)/1.05 var(--display);letter-spacing:-.025em;ma
 .wn-marker{flex:none;display:flex;gap:3px;padding-top:2px}
 .wn-marker svg{width:15px;height:15px;color:var(--muted)}
 .wn-marker .wn-dot{width:5px;height:5px;margin:5px 5px 0 5px;border-radius:50%;background:var(--muted)}
+/* Only the last WN_RECENT_COUNT versions show by default -- older ones sit collapsed behind this
+   toggle so the sheet opens short, with everything still reachable one click away. */
+.wn-history-toggle{display:flex;align-items:center;gap:8px;width:100%;margin:10px 0 4px;padding:12px 2px 10px;border:0;border-top:1px solid var(--line);background:none;color:var(--muted);font:700 13px/1 var(--body);cursor:pointer;text-align:left}
+.wn-history-toggle svg{width:14px;height:14px;flex:none;transition:transform .15s ease}
+.wn-history-toggle.open svg{transform:rotate(180deg)}
+.wn-history-body{display:none}
+.wn-history-body.open{display:block}
 .settings-version{text-align:center;margin-top:18px}
 .stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:10px 0 4px}
 .stat-tile{background:var(--sunk);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:2px}
@@ -933,8 +940,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.22";
+const APP_VERSION = "1.6.23";
 const WHATS_NEW = [
+  { version: "1.6.23", date: "19 Nov 2026", items: [
+    "The What's New list now only shows the last 3 versions by default, with everything older tucked behind a \"Historical changes\" dropdown so it's quicker to scan.",
+    ["Entries from before the website existed (anything under v1.6.12) now show the mobile icon instead of a plain dot, since those fixes only ever shipped to the app.", ["mobile"]]
+  ] },
   { version: "1.6.22", date: "19 Nov 2026", items: [
     ["The collection grid now reflows with the browser's own zoom (Ctrl+scroll/+/-) instead of staying stuck at 4 columns — more tiles fit per row zoomed out, fewer zoomed in.", ["desktop"]],
     ["While multi-selecting, the Select all/Edit/Share/Delete bar moved to sit just below the Brand/Series filters instead of competing with the sort/group icons, with a small red × to cancel the selection, and a bit more space before the first row of cards.", ["desktop"]],
@@ -3448,33 +3459,62 @@ async function exportItemsPdf(items) {
   await shareOrDownload(name, doc.output("blob"), "application/pdf", `My miCollects ${kind}`);
 }
 
-/* A plain string item is universal (every platform alike) and gets a plain dot marker, same as the
-   bullet it replaces. A [text, platforms] item names which of "desktop"/"mobile" it's specific to
-   (or both) and gets that icon instead -- replacing what used to be spelled out in the text itself
-   ("On the website, ..."). */
+/* A [text, platforms] item names which of "desktop"/"mobile" it's specific to (or both) and shows
+   that icon in place of a bullet. A plain string item has no explicit tag -- rather than hand-tag
+   every one of the ~25 versions predating this website effort, platformsFor() defaults it instead:
+   anything before WEBSITE_ERA_START shipped only to the (then web-less) app, so mobile alone; from
+   that version on, an untagged entry is some other kind of cross-platform fix/account change (the
+   platform-specific ones already carry an explicit tag), so both. wn-dot only remains reachable as a
+   fallback should platforms ever end up empty some other way. */
+const WEBSITE_ERA_START = "1.6.12";
+const verCmp = (a, b) => {
+  const pa = a.split(".").map(Number), pb = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) { const d = (pa[i] || 0) - (pb[i] || 0); if (d) return d; }
+  return 0;
+};
+function platformsFor(version, explicit) {
+  if (explicit) return explicit;
+  return verCmp(version, WEBSITE_ERA_START) < 0 ? ["mobile"] : ["desktop", "mobile"];
+}
 function wnMarker(platforms) {
   if (!platforms || !platforms.length) return `<span class="wn-dot"></span>`;
   return platforms.map(p => ICONS[p] || "").join("");
 }
+const WN_RECENT_COUNT = 3;
+function wnVersionHtml(v) {
+  return `
+    <div class="wn-version">
+      <h3>v${esc(v.version)}<span class="wn-date">${esc(v.date)}</span></h3>
+      <ul class="wn-items">${v.items.map(i => {
+        const [text, explicit] = Array.isArray(i) ? i : [i, null];
+        const platforms = platformsFor(v.version, explicit);
+        return `<li><span class="wn-marker">${wnMarker(platforms)}</span><span>${esc(text)}</span></li>`;
+      }).join("")}</ul>
+    </div>`;
+}
 function openWhatsNew() {
   settings.whatsNewSeenVersion = WHATS_NEW[0].version; saveSettings(); cloudPushSettings();
   $("#whatsNewBtn").classList.remove("has-news");
+  const recent = WHATS_NEW.slice(0, WN_RECENT_COUNT);
+  const older = WHATS_NEW.slice(WN_RECENT_COUNT);
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">What's New</h2>
     <div class="wn-key">
       <span>${ICONS.desktop}Desktop</span>
       <span>${ICONS.mobile}Mobile</span>
     </div>
-    ${WHATS_NEW.map(v => `
-      <div class="wn-version">
-        <h3>v${esc(v.version)}<span class="wn-date">${esc(v.date)}</span></h3>
-        <ul class="wn-items">${v.items.map(i => {
-          const [text, platforms] = Array.isArray(i) ? i : [i, null];
-          return `<li><span class="wn-marker">${wnMarker(platforms)}</span><span>${esc(text)}</span></li>`;
-        }).join("")}</ul>
-      </div>`).join("")}
+    ${recent.map(wnVersionHtml).join("")}
+    ${older.length ? `
+      <button type="button" class="wn-history-toggle" id="wnHistoryToggle">${CHEVRON_SVG}<span>Historical changes</span></button>
+      <div class="wn-history-body" id="wnHistoryBody">${older.map(wnVersionHtml).join("")}</div>` : ""}
     <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>`;
   $("#sDone").addEventListener("click", closeSheet);
+  if (older.length) {
+    $("#wnHistoryToggle").addEventListener("click", () => {
+      $("#wnHistoryToggle").classList.toggle("open");
+      $("#wnHistoryBody").classList.toggle("open");
+    });
+  }
   showSheet();
 }
 
