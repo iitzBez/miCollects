@@ -98,7 +98,9 @@ h1{font:800 clamp(22px,6.5vw,40px)/1.05 var(--display);letter-spacing:-.025em;ma
 .wn-marker svg{width:15px;height:15px;color:var(--muted)}
 .wn-marker .wn-dot{width:5px;height:5px;margin:5px 5px 0 5px;border-radius:50%;background:var(--muted)}
 /* Only the last WN_RECENT_COUNT versions show by default -- older ones sit collapsed behind this
-   toggle so the sheet opens short, with everything still reachable one click away. */
+   toggle so the sheet opens short. Only WN_HISTORY_COUNT of those render at all (older than that
+   stays in the WHATS_NEW array but is never built into DOM), since rendering every past version
+   was what made the toggle slow to open. */
 .wn-history-toggle{display:flex;align-items:center;gap:8px;width:100%;margin:10px 0 4px;padding:12px 2px 10px;border:0;border-top:1px solid var(--line);background:none;color:var(--muted);font:700 13px/1 var(--body);cursor:pointer;text-align:left}
 .wn-history-toggle svg{width:14px;height:14px;flex:none;transition:transform .15s ease}
 .wn-history-toggle.open svg{transform:rotate(180deg)}
@@ -940,8 +942,11 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.23";
+const APP_VERSION = "1.6.24";
 const WHATS_NEW = [
+  { version: "1.6.24", date: "19 Nov 2026", items: [
+    "Historical changes now only lists the previous 10 versions instead of every one ever shipped, which was what made that dropdown slow to open. Older entries aren't deleted, just no longer shown there."
+  ] },
   { version: "1.6.23", date: "19 Nov 2026", items: [
     "The What's New list now only shows the last 3 versions by default, with everything older tucked behind a \"Historical changes\" dropdown so it's quicker to scan.",
     ["Entries from before the website existed (anything under v1.6.12) now show the mobile icon instead of a plain dot, since those fixes only ever shipped to the app.", ["mobile"]]
@@ -3481,6 +3486,7 @@ function wnMarker(platforms) {
   return platforms.map(p => ICONS[p] || "").join("");
 }
 const WN_RECENT_COUNT = 3;
+const WN_HISTORY_COUNT = 10;
 function wnVersionHtml(v) {
   return `
     <div class="wn-version">
@@ -3496,7 +3502,7 @@ function openWhatsNew() {
   settings.whatsNewSeenVersion = WHATS_NEW[0].version; saveSettings(); cloudPushSettings();
   $("#whatsNewBtn").classList.remove("has-news");
   const recent = WHATS_NEW.slice(0, WN_RECENT_COUNT);
-  const older = WHATS_NEW.slice(WN_RECENT_COUNT);
+  const older = WHATS_NEW.slice(WN_RECENT_COUNT, WN_RECENT_COUNT + WN_HISTORY_COUNT);
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">What's New</h2>
     <div class="wn-key">
