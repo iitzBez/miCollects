@@ -502,9 +502,17 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
      of the icon-then-text order every other sidebar row uses -- order:-1 fixes the visual position
      without needing to change how the relocation itself appends things. */
   #sideAcctRow #headerAvatar{flex:none;cursor:pointer;order:-1}
-  #sideAcctLabel{min-width:0;overflow:hidden}
+  #sideAcctLabel{min-width:0;overflow:hidden;flex:1}
   #sideAcctLabel .name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
   #sideAcctLabel .status{font-size:11px;color:var(--muted)}
+  /* A quick way to sign out right from the sidebar -- without it, signing out means opening Account
+     and scrolling all the way down to the "Sign out" button there. Smaller than the other sidebar
+     icon buttons (that size reads fine as its own nav row; cramped into the account row next to an
+     avatar and name, it's crowding) and only shown once signed in, since there's nothing to sign out
+     of otherwise. */
+  #sideSignOutBtn{flex:none;width:30px;height:30px;cursor:pointer;color:var(--danger)}
+  #sideSignOutBtn svg{width:16px;height:16px}
+  #sideSignOutBtn:hover{background:var(--sunk)}
 
   /* Sheets/pickers: centered dialogs with a real close button instead of bottom sheets you can only
      dismiss by tapping outside -- the grab handle (a swipe-to-dismiss affordance) is meaningless
@@ -603,6 +611,9 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
     <div id="sideSettingsSlot"></div>
     <div id="sideAcctRow">
       <div id="sideAcctLabel"></div>
+      <button type="button" class="icon-btn" id="sideSignOutBtn" aria-label="Sign out" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+      </button>
     </div>
   </div>
 </aside>
@@ -953,9 +964,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.26";
+const APP_VERSION = "1.6.27";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.27", date: "19 Nov 2026", items: [
+    ["Added a quick sign-out button (the red power icon) next to your name and picture in the sidebar, instead of needing to open Account and scroll down to find it.", ["desktop"]]
+  ] },
   { version: "1.6.26", date: "19 Nov 2026", items: [
     "Signing out from the account/profile screen and then signing back in now takes you to the home screen, instead of straight back to that same profile screen.",
     ["The password field on the sign-in/sign-up screen could show two overlapping \"show password\" eye icons once you started typing (Edge's own built-in one, on top of ours) — only one shows now.", ["desktop"]]
@@ -1236,6 +1250,7 @@ function render() {
   $("#sideAcctLabel").innerHTML = cloudUser
     ? `<div class="name">${esc(settings.firstName || "Account")}</div><div class="status">Signed in</div>`
     : `<div class="name">Sign in</div><div class="status">Sync to the cloud</div>`;
+  $("#sideSignOutBtn").hidden = !cloudUser;
 
   $("#grid").className = "grid " + (state.layout === "list" ? "view-list" : state.layout.replace("grid", "cols-"));
   document.querySelectorAll("#layoutBar [data-layout]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.layout === state.layout)));
@@ -3862,8 +3877,15 @@ $("#headerAvatar").addEventListener("click", () => {
 // not just the small avatar circle. Skips the forward when the click already landed on headerAvatar
 // itself, which has its own listener above and would otherwise fire this twice.
 $("#sideAcctRow").addEventListener("click", e => {
-  if (e.target.closest("#headerAvatar")) return;
+  if (e.target.closest("#headerAvatar") || e.target.closest("#sideSignOutBtn")) return;
   $("#headerAvatar").click();
+});
+// A one-click shortcut to sign out right from the sidebar, instead of opening Account and scrolling
+// down to its own "Sign out" button -- same confirm() already used for bulk item delete, and the
+// same forceWelcomeNext/closeSheet()/cloudSignOut() sequence Account's own signOutBtn uses.
+$("#sideSignOutBtn").addEventListener("click", () => {
+  if (!confirm("Sign out of miCollects?")) return;
+  forceWelcomeNext = true; closeSheet(); cloudSignOut();
 });
 
 /* ---------- Pull to sync ---------- */
