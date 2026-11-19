@@ -353,6 +353,13 @@ input.has-marquee::placeholder{color:transparent}
 .hint-btn{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);background:none;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;display:grid;place-items:center;flex:none;padding:0}
 #wLocalHint{text-align:center}
 @media (prefers-reduced-motion:reduce){.welcome-logo,.welcome-choices,.welcome-form{animation:none;opacity:1}}
+
+/* Desktop: the 1100px content width above was sized for a phone-in-a-WebView (the APK), where a
+   screen this wide never happened -- on an actual desktop browser it leaves large unused margins on
+   both sides. Just widening the cap here, not changing layout/columns. */
+@media (min-width:1300px){
+  .top,.toolbar,.layout-bar,.select-bar,.pill-field,.chips,.grid{max-width:1500px}
+}
 </style>
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-auth-compat.js"></script>
