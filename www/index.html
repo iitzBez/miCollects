@@ -526,6 +526,20 @@ input.has-marquee::placeholder{color:transparent}
 
 <script>
 "use strict";
+// Declared this early (rather than down in the "Cloud sync" section where the rest of the Firebase
+// setup lives) because hideWelcomeIfOnboarded()/maybeShowWelcome() need to read both before the
+// browser's first paint, to decide whether to flash the welcome screen -- moving just these two
+// avoids the far riskier alternative of relocating the whole Firebase init block.
+const firebaseConfig = {
+  apiKey: "AIzaSyBiTKFRbf8d2npi3YOcOGM5a-8Vrjo_LXs",
+  authDomain: "micollects.firebaseapp.com",
+  projectId: "micollects",
+  storageBucket: "micollects",
+  messagingSenderId: "685369410685",
+  appId: "1:685369410685:web:a7812c04ba3b2215a51d14"
+};
+const cloudEnabled = firebaseConfig.apiKey !== "PASTE_ME";
+let cloudUser = null;
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const uid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -621,7 +635,11 @@ applyTheme();
    whether the restored session is a cloud account about to be force-signed-out -- hideWelcomeIfOnboarded()
    gets called once that's known, from onAuthStateChanged. */
 function hideWelcomeIfOnboarded() {
-  if (!settings.onboarded) return;
+  // Same reasoning as maybeShowWelcome's needsWelcome below (defined later, but this runs first,
+  // including once synchronously before cloudUser is even known -- cloudUser is still null/undefined
+  // at that point, so this correctly leaves #welcome alone rather than hiding it on a stale
+  // settings.onboarded that says nothing about whether this load is actually signed in).
+  if (cloudEnabled ? !cloudUser : !settings.onboarded) return;
   const w = document.getElementById("welcome");
   if (w) w.hidden = true;
 }
@@ -728,8 +746,11 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.15";
+const APP_VERSION = "1.6.16";
 const WHATS_NEW = [
+  { version: "1.6.16", date: "19 Nov 2026", items: [
+    "Fixed being signed out and refreshing the page landing you back on an (empty) collection screen instead of staying on the sign in screen — the permanent \"already onboarded\" flag from a past sign-in was overriding the current signed-out state."
+  ] },
   { version: "1.6.15", date: "19 Nov 2026", items: [
     "Removed \"Use on this device only\" from the welcome screen — an account is required going forward.",
     "Signing out now always takes you back to the sign in/create account screen, instead of landing back on an empty collection screen."
@@ -2261,25 +2282,14 @@ function armThen(btn, armedLabel, action) {
 }
 
 /* ---------- Cloud sync (Firebase, optional) ---------- */
-/* Paste your Firebase project's web app config here (Firebase console > Project settings > General >
-   Your apps > SDK setup and configuration). This object isn't secret -- Firebase web config is meant to
-   be public; access is controlled by the Firestore/Storage security rules set in the console, not by
-   hiding this. Leave the placeholder as-is to ship the app with cloud sync simply turned off. */
-const firebaseConfig = {
-  apiKey: "AIzaSyBiTKFRbf8d2npi3YOcOGM5a-8Vrjo_LXs",
-  authDomain: "micollects.firebaseapp.com",
-  projectId: "micollects",
-  storageBucket: "micollects",
-  messagingSenderId: "685369410685",
-  appId: "1:685369410685:web:a7812c04ba3b2215a51d14"
-};
-const cloudEnabled = firebaseConfig.apiKey !== "PASTE_ME";
+/* firebaseConfig/cloudEnabled/cloudUser now declared up near the top of the script instead of here --
+   see the comment there. Leave firebaseConfig's apiKey as "PASTE_ME" to ship with cloud sync off. */
 /* Storage bucket(s) retired in past migrations -- a photo URL still pointing at one of these is dead
    (the bucket is gone), so cloudPullAll re-uploads it fresh to the current bucket instead. Safe to
    drop once no account has photos left on an old bucket. */
 const RETIRED_STORAGE_HOSTS = ["micollects.firebasestorage.app"];
 const isFromRetiredBucket = url => typeof url === "string" && RETIRED_STORAGE_HOSTS.some(h => url.includes(`/b/${h}/o/`));
-let cloudUser = null, appReady = false, currentScope = "local", authResolvedOnce = false, welcomeShown = false;
+let appReady = false, currentScope = "local", authResolvedOnce = false, welcomeShown = false;
 // Guards cloudPushSettings() below -- false until this account's own settings have been pulled down
 // (or confirmed to not exist yet) at least once this session, so a trivial change (sort order, layout,
 // adding a list value, etc.) ticked before that pull lands can't push this device's still-default
@@ -2599,7 +2609,13 @@ function refreshSettingsIfOpen() {
 function maybeShowWelcome(force) {
   if (!appReady || (cloudEnabled && !authResolvedOnce)) return;
   if (!force && welcomeShown) return;
-  if (force || !settings.onboarded) { welcomeShown = true; showWelcome(); }
+  // Accounts are required now, so "already onboarded" alone no longer means "don't show the login
+  // screen" -- settings.onboarded is permanent once set and never clears on sign-out, which used to
+  // leave a signed-out visitor looking at an empty collection screen instead of login. When cloud
+  // sync is actually configured, show it unless there's a real signed-in user right now; only fall
+  // back to the old onboarded-once check for a build with no accounts to sign into at all.
+  const needsWelcome = cloudEnabled ? !cloudUser : !settings.onboarded;
+  if (force || needsWelcome) { welcomeShown = true; showWelcome(); }
 }
 if (cloudEnabled) {
   fbAuth.onAuthStateChanged(async user => {
