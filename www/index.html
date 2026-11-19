@@ -493,6 +493,15 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
   #sideNav .count{margin-left:auto;background:var(--sunk);color:var(--muted);font-weight:700;
     font-size:11px;padding:1px 7px;border-radius:9px}
   #sideNav .tab-btn[aria-selected="true"] .count{background:var(--bg)}
+  /* The relocated #summaryBtn (see the "moves" array) just isn't shown in the sidebar any more --
+     #sideSummaryLabel/#sideCollSummaryBtn/#sideWishSummaryBtn (static children of #sideNav, so they
+     land before the relocated items in the DOM) take its place instead. order:1 puts them visually
+     after those relocated items (which keep the default order:0) regardless of that DOM position. */
+  #sideNav #summaryBtn{display:none}
+  #sideSummaryLabel,#sideCollSummaryBtn,#sideWishSummaryBtn{order:1}
+  #sideSummaryLabel{display:flex;align-items:center;gap:12px;padding:14px 12px 2px;color:var(--muted);font:650 14px/1 var(--body)}
+  #sideSummaryLabel svg{width:18px;height:18px;flex:none}
+  #sideNav .tab-btn.sub{padding:9px 12px 9px 42px;font-size:13px}
 
   #sideBottom{margin-top:auto;display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--line);padding-top:12px}
   #sideSettingsSlot #settingsBtn{
@@ -630,7 +639,18 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
 <aside id="sidebar">
   <div id="sideLogoSlot"></div>
   <div id="sideUtilRow"></div>
-  <nav id="sideNav" aria-label="Primary"></nav>
+  <nav id="sideNav" aria-label="Primary">
+    <!-- Desktop only (see #sideNav #summaryBtn{display:none} and the surrounding comment) -- the
+         relocated #summaryBtn row itself is hidden here and replaced by this label plus two real
+         sub-items, since desktop has room to show the Collection/Wishlist choice directly instead
+         of behind a click like the mobile picker (openSummaryPicker) needs to. -->
+    <div class="side-summary-label" id="sideSummaryLabel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+      <span>Summary</span>
+    </div>
+    <button type="button" class="tab-btn sub" id="sideCollSummaryBtn">Collection</button>
+    <button type="button" class="tab-btn sub" id="sideWishSummaryBtn">Wishlist</button>
+  </nav>
   <div id="sideBottom">
     <div id="sideSettingsSlot"></div>
     <div id="sideAcctRow">
@@ -649,7 +669,7 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
     <h1 id="title">Collection</h1>
     <p id="stats"></p>
   </div>
-  <button class="icon-btn" id="summaryBtn" aria-label="Collection summary">
+  <button class="icon-btn" id="summaryBtn" aria-label="Summary">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
     <span class="side-label">Summary</span>
   </button>
@@ -988,9 +1008,14 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.36";
+const APP_VERSION = "1.6.37";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.37", date: "19 Nov 2026", items: [
+    ["Added a Wishlist Summary alongside the existing Collection Summary -- a breakdown of what you're after, its total price to complete, by category/brand, and highest-priced first, with the same PDF/CSV export.", ["desktop", "mobile"]],
+    ["In the sidebar, Summary now shows Collection and Wishlist as two separate entries underneath it.", ["desktop"]],
+    ["Tapping Summary now asks whether you want the Collection or Wishlist one, instead of only ever showing the Collection breakdown.", ["mobile"]]
+  ] },
   { version: "1.6.36", date: "19 Nov 2026", items: [
     ["Fixed Collection/Wishlist in the sidebar no longer highlighting whichever one was active after switching tabs.", ["desktop"]]
   ] },
@@ -3277,23 +3302,32 @@ function openAccount() {
   showSheet();
 }
 
-/* Collection only ("collected" items) -- the Wishlist's numbers (target price, not a real spend) don't
-   fit the same breakdown, so this stays scoped to owned items. */
-function openSummary() {
-  const items = state.items.filter(i => i.list === "owned");
+/* Desktop only (see #sideCollSummaryBtn/#sideWishSummaryBtn) -- mobile has no room for two separate
+   sidebar entries, so #summaryBtn there opens this picker instead, same destination either way. */
+function openSummaryPicker() {
+  openPicker("Summary", [["owned", "Collection Summary"], ["wish", "Wishlist Summary"]], null, openSummary);
+}
+/* list: "owned" (default) or "wish" -- the two share every section (stat tiles, By category, By
+   brand, a value-sorted list) but owned's numbers are built around what was actually paid/qty'd,
+   which wishlist items don't have (target price instead, no real spend yet), so each branch below
+   picks its own tiles/labels/columns rather than forcing one shape onto both. */
+function openSummary(list) {
+  const wish = list === "wish";
+  const title = wish ? "Wishlist Summary" : "Collection Summary";
+  const items = state.items.filter(i => i.list === (wish ? "wish" : "owned"));
   const n = items.length;
   if (!n) {
     $("#sheetBody").innerHTML = `
-      <h2 id="sheetTitle">Collection Summary</h2>
-      <p class="hint">Add something to your collection to see a breakdown here.</p>
+      <h2 id="sheetTitle">${title}</h2>
+      <p class="hint">Add something to your ${wish ? "wishlist" : "collection"} to see a breakdown here.</p>
       <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>`;
     $("#sDone").addEventListener("click", closeSheet);
     showSheet();
     return;
   }
-  const pieces = items.reduce((s, i) => s + (+i.qty || 1), 0);
   const total = items.reduce((s, i) => s + price(i), 0);
   const avg = total / n;
+  const pieces = items.reduce((s, i) => s + (+i.qty || 1), 0);
   const totalPaid = items.reduce((s, i) => s + (+i.paid || 0), 0);
   const avgPaid = totalPaid / n;
   const byCount = (key, fallback) => {
@@ -3304,41 +3338,49 @@ function openSummary() {
   const cats = byCount("category", "Uncategorized");
   const brands = byCount("brand", "No brand");
   const maxCat = cats[0][1], maxBrand = brands[0][1];
-  const byValue = [...items].sort((a, b) => (+b.paid || 0) - (+a.paid || 0));
+  const byValue = wish ? [...items].sort((a, b) => (+b.target || 0) - (+a.target || 0))
+    : [...items].sort((a, b) => (+b.paid || 0) - (+a.paid || 0));
   const barRow = (label, count, max) => `
     <div class="bar-row">
       <div class="bar-label"><span>${esc(label)}</span><span>${count}</span></div>
       <div class="bar-track"><div class="bar-fill" style="width:${Math.round(count / max * 100)}%"></div></div>
     </div>`;
-  $("#sheetBody").innerHTML = `
-    <div class="sheet-head">
-      <h2 id="sheetTitle">Collection Summary</h2>
-      <button class="icon-btn" id="summaryExportBtn" aria-label="Export">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
-      </button>
-    </div>
-    <div class="stat-grid">
+  const tilesHtml = wish ? `
+      <div class="stat-tile"><span class="stat-num">${n}</span><span class="stat-label">${n === 1 ? "item wanted" : "items wanted"}</span></div>
+      <div class="stat-tile"><span class="stat-num">${money(total)}</span><span class="stat-label">total to complete</span></div>
+      <div class="stat-tile"><span class="stat-num">${money(avg)}</span><span class="stat-label">avg. price/item</span></div>`
+    : `
       <div class="stat-tile"><span class="stat-num">${n}</span><span class="stat-label">${n === 1 ? "item" : "items"}</span></div>
       <div class="stat-tile"><span class="stat-num">${pieces}</span><span class="stat-label">${pieces === 1 ? "piece" : "pieces"}</span></div>
       <div class="stat-tile"><span class="stat-num">${money(totalPaid)}</span><span class="stat-label">total paid</span></div>
       <div class="stat-tile"><span class="stat-num">${money(total)}</span><span class="stat-label">total value</span></div>
       <div class="stat-tile"><span class="stat-num">${money(avgPaid)}</span><span class="stat-label">avg. paid/item</span></div>
-      <div class="stat-tile"><span class="stat-num">${money(avg)}</span><span class="stat-label">avg. value/item</span></div>
+      <div class="stat-tile"><span class="stat-num">${money(avg)}</span><span class="stat-label">avg. value/item</span></div>`;
+  const valueListHtml = wish
+    ? byValue.map(i => `<div class="value-row"><span class="value-name">${esc(i.name || "Untitled")}</span><span class="value-amt">${money(+i.target || 0)}</span></div>`).join("")
+    : byValue.map(i => `<div class="value-row"><span class="value-name">${esc(i.name || "Untitled")}</span><span class="value-amt">${money(+i.paid || 0)}<span class="value-sub">value ${money(price(i))} · qty ${+i.qty || 1}</span></span></div>`).join("");
+  $("#sheetBody").innerHTML = `
+    <div class="sheet-head">
+      <h2 id="sheetTitle">${title}</h2>
+      <button class="icon-btn" id="summaryExportBtn" aria-label="Export">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+      </button>
     </div>
+    <div class="stat-grid">${tilesHtml}</div>
     <h3>By category</h3>
     ${cats.map(([k, c]) => barRow(k, c, maxCat)).join("")}
     <h3>By brand</h3>
     ${brands.map(([k, c]) => barRow(k, c, maxBrand)).join("")}
-    <h3>By price paid (highest first)</h3>
-    <div class="value-list">${byValue.map(i => `<div class="value-row"><span class="value-name">${esc(i.name || "Untitled")}</span><span class="value-amt">${money(+i.paid || 0)}<span class="value-sub">value ${money(price(i))} · qty ${+i.qty || 1}</span></span></div>`).join("")}</div>
+    <h3>${wish ? "By price (highest first)" : "By price paid (highest first)"}</h3>
+    <div class="value-list">${valueListHtml}</div>
     <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>`;
   $("#sDone").addEventListener("click", closeSheet);
   $("#summaryExportBtn").addEventListener("click", () => openPicker("Export", [
     ["pdf", "PDF"], ["csv", "CSV"]
   ], null, async v => {
     try {
-      if (v === "csv") await exportSummaryCsv({ n, pieces, totalPaid, total, avgPaid, avg, byValue });
-      else await exportSummaryPdf({ n, pieces, totalPaid, total, avgPaid, avg, cats, brands, byValue });
+      if (v === "csv") await exportSummaryCsv(list, { n, pieces, totalPaid, total, avgPaid, avg, byValue });
+      else await exportSummaryPdf(list, { n, pieces, totalPaid, total, avgPaid, avg, cats, brands, byValue });
     } catch (e) { toast("Couldn’t export: " + authErrorMsg(e)); }
   }));
   showSheet();
@@ -3417,8 +3459,16 @@ async function shareOrDownload(name, blob, mimeType, shareTitle) {
 }
 
 const csvCell = v => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-async function exportSummaryCsv({ n, pieces, totalPaid, total, avgPaid, avg, byValue }) {
-  const rows = [
+async function exportSummaryCsv(list, { n, pieces, totalPaid, total, avgPaid, avg, byValue }) {
+  const wish = list === "wish";
+  const rows = wish ? [
+    ["Wishlist Summary"], [],
+    ["Items wanted", n],
+    ["Total To Complete", total.toFixed(2)], ["Avg. Price/Item", avg.toFixed(2)],
+    [],
+    ["Name", "Category", "Brand", "Price"],
+    ...byValue.map(i => [i.name || "Untitled", i.category || "", i.brand || "", (+i.target || 0).toFixed(2)])
+  ] : [
     ["Collection Summary"], [],
     ["Items", n], ["Pieces", pieces],
     ["Total Paid", totalPaid.toFixed(2)], ["Total Value", total.toFixed(2)],
@@ -3428,8 +3478,8 @@ async function exportSummaryCsv({ n, pieces, totalPaid, total, avgPaid, avg, byV
     ...byValue.map(i => [i.name || "Untitled", i.category || "", i.brand || "", +i.qty || 1, (+i.paid || 0).toFixed(2), (+i.value || 0).toFixed(2), price(i).toFixed(2)])
   ];
   const csv = rows.map(r => r.map(csvCell).join(",")).join("\r\n");
-  const name = `micollects-summary-${new Date().toISOString().slice(0, 10)}.csv`;
-  await shareOrDownload(name, new Blob([csv], { type: "text/csv" }), "text/csv", "Collection summary (CSV)");
+  const name = `micollects-${wish ? "wishlist" : "collection"}-summary-${new Date().toISOString().slice(0, 10)}.csv`;
+  await shareOrDownload(name, new Blob([csv], { type: "text/csv" }), "text/csv", `${wish ? "Wishlist" : "Collection"} summary (CSV)`);
 }
 
 /* Shared across every jsPDF-based export (Collection Summary, and the whole-collection/wishlist
@@ -3454,16 +3504,20 @@ function drawPdfHeader(doc, marginX, pageW, title) {
   doc.text(new Date().toLocaleDateString(), pageW - marginX, y, { align: "right" });
   return y + 10;
 }
-function exportSummaryPdf({ n, pieces, totalPaid, total, avgPaid, avg, cats, brands, byValue }) {
+function exportSummaryPdf(list, { n, pieces, totalPaid, total, avgPaid, avg, cats, brands, byValue }) {
+  const wish = list === "wish";
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const marginX = 15, pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
   const contentW = pageW - marginX * 2;
   const INK = PDF_INK, BRASS = PDF_BRASS, MUTED = PDF_MUTED, SUNK = PDF_SUNK, LINE = PDF_LINE;
-  let y = drawPdfHeader(doc, marginX, pageW, "Collection Summary");
+  let y = drawPdfHeader(doc, marginX, pageW, wish ? "Wishlist Summary" : "Collection Summary");
   const ensureSpace = h => { if (y + h > pageH - 15) { doc.addPage(); y = 20; } };
 
-  const tiles = [
+  const tiles = wish ? [
+    [String(n), n === 1 ? "item" : "items"],
+    [money(total), "total to complete"], [money(avg), "avg. price/item"]
+  ] : [
     [String(n), n === 1 ? "item" : "items"], [String(pieces), pieces === 1 ? "piece" : "pieces"],
     [money(totalPaid), "total paid"], [money(total), "total value"],
     [money(avgPaid), "avg. paid/item"], [money(avg), "avg. value/item"]
@@ -3506,40 +3560,65 @@ function exportSummaryPdf({ n, pieces, totalPaid, total, avgPaid, avg, cats, bra
   sectionHeading("By brand");
   const maxBrand = brands[0][1]; brands.forEach(([k, c]) => barRow(k, c, maxBrand));
   y += 3;
-  sectionHeading("By price paid (highest first)");
+  sectionHeading(wish ? "By price (highest first)" : "By price paid (highest first)");
   /* A row per item, not a bubble per item -- with a collection of 100+ items the earlier bubble
      layout (~17mm tall each) ran to many pages; a dense table row (7mm) fits 4-5x as many per page. */
-  const colQty = 16, colPaid = 30, colValue = 32, colName = contentW - colQty - colPaid - colValue;
-  const xName = marginX, xQtyEnd = marginX + colName + colQty, xPaidEnd = xQtyEnd + colPaid, xValueEnd = xPaidEnd + colValue;
   const rowH = 7;
-  const drawValueHeader = () => {
-    doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...MUTED);
-    doc.text("Name", xName, y);
-    doc.text("Qty", xQtyEnd, y, { align: "right" });
-    doc.text("Value", xPaidEnd, y, { align: "right" });
-    doc.text("Paid", xValueEnd, y, { align: "right" });
-    y += 2;
-    doc.setDrawColor(...LINE); doc.line(marginX, y, pageW - marginX, y);
-    y += 5;
-  };
-  drawValueHeader();
-  byValue.forEach((it, idx) => {
-    if (y + rowH > pageH - 15) { doc.addPage(); y = 20; drawValueHeader(); }
-    if (idx % 2 === 1) { doc.setFillColor(...SUNK); doc.rect(marginX, y - 4.5, contentW, rowH, "F"); }
-    let nm = it.name || "Untitled";
-    doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
-    while (doc.getTextWidth(nm) > colName - 3 && nm.length > 1) nm = nm.slice(0, -1);
-    if (nm !== (it.name || "Untitled")) nm = nm.slice(0, -2) + "…";
-    doc.setTextColor(...INK); doc.text(nm, xName, y);
-    doc.text(String(+it.qty || 1), xQtyEnd, y, { align: "right" });
-    doc.setTextColor(...MUTED); doc.text(money(price(it)), xPaidEnd, y, { align: "right" });
-    doc.setTextColor(...INK); doc.setFont("helvetica", "bold");
-    doc.text(money(+it.paid || 0), xValueEnd, y, { align: "right" });
-    y += rowH;
-  });
+  if (wish) {
+    const colPrice = 30, colName = contentW - colPrice;
+    const xName = marginX, xPriceEnd = marginX + contentW;
+    const drawValueHeader = () => {
+      doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...MUTED);
+      doc.text("Name", xName, y);
+      doc.text("Price", xPriceEnd, y, { align: "right" });
+      y += 2;
+      doc.setDrawColor(...LINE); doc.line(marginX, y, pageW - marginX, y);
+      y += 5;
+    };
+    drawValueHeader();
+    byValue.forEach((it, idx) => {
+      if (y + rowH > pageH - 15) { doc.addPage(); y = 20; drawValueHeader(); }
+      if (idx % 2 === 1) { doc.setFillColor(...SUNK); doc.rect(marginX, y - 4.5, contentW, rowH, "F"); }
+      let nm = it.name || "Untitled";
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
+      while (doc.getTextWidth(nm) > colName - 3 && nm.length > 1) nm = nm.slice(0, -1);
+      if (nm !== (it.name || "Untitled")) nm = nm.slice(0, -2) + "…";
+      doc.setTextColor(...INK); doc.text(nm, xName, y);
+      doc.setFont("helvetica", "bold"); doc.text(money(+it.target || 0), xPriceEnd, y, { align: "right" });
+      y += rowH;
+    });
+  } else {
+    const colQty = 16, colPaid = 30, colValue = 32, colName = contentW - colQty - colPaid - colValue;
+    const xName = marginX, xQtyEnd = marginX + colName + colQty, xPaidEnd = xQtyEnd + colPaid, xValueEnd = xPaidEnd + colValue;
+    const drawValueHeader = () => {
+      doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...MUTED);
+      doc.text("Name", xName, y);
+      doc.text("Qty", xQtyEnd, y, { align: "right" });
+      doc.text("Value", xPaidEnd, y, { align: "right" });
+      doc.text("Paid", xValueEnd, y, { align: "right" });
+      y += 2;
+      doc.setDrawColor(...LINE); doc.line(marginX, y, pageW - marginX, y);
+      y += 5;
+    };
+    drawValueHeader();
+    byValue.forEach((it, idx) => {
+      if (y + rowH > pageH - 15) { doc.addPage(); y = 20; drawValueHeader(); }
+      if (idx % 2 === 1) { doc.setFillColor(...SUNK); doc.rect(marginX, y - 4.5, contentW, rowH, "F"); }
+      let nm = it.name || "Untitled";
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
+      while (doc.getTextWidth(nm) > colName - 3 && nm.length > 1) nm = nm.slice(0, -1);
+      if (nm !== (it.name || "Untitled")) nm = nm.slice(0, -2) + "…";
+      doc.setTextColor(...INK); doc.text(nm, xName, y);
+      doc.text(String(+it.qty || 1), xQtyEnd, y, { align: "right" });
+      doc.setTextColor(...MUTED); doc.text(money(price(it)), xPaidEnd, y, { align: "right" });
+      doc.setTextColor(...INK); doc.setFont("helvetica", "bold");
+      doc.text(money(+it.paid || 0), xValueEnd, y, { align: "right" });
+      y += rowH;
+    });
+  }
 
-  const name = `micollects-summary-${new Date().toISOString().slice(0, 10)}.pdf`;
-  return shareOrDownload(name, doc.output("blob"), "application/pdf", "Collection summary (PDF)");
+  const name = `micollects-${wish ? "wishlist" : "collection"}-summary-${new Date().toISOString().slice(0, 10)}.pdf`;
+  return shareOrDownload(name, doc.output("blob"), "application/pdf", `${wish ? "Wishlist" : "Collection"} summary (PDF)`);
 }
 
 /* Every item gets its own row with its main photo -- it.photos[0] is already a local base64
@@ -4000,7 +4079,9 @@ document.querySelectorAll(".nav button").forEach(b => b.addEventListener("click"
 $("#addBtn").addEventListener("click", () => openForm(null));
 $("#settingsBtn").addEventListener("click", openSettings);
 $("#whatsNewBtn").addEventListener("click", openWhatsNew);
-$("#summaryBtn").addEventListener("click", openSummary);
+$("#summaryBtn").addEventListener("click", openSummaryPicker);
+$("#sideCollSummaryBtn").addEventListener("click", () => openSummary("owned"));
+$("#sideWishSummaryBtn").addEventListener("click", () => openSummary("wish"));
 $("#headerSyncBtn").addEventListener("click", () => cloudPullAll());
 $("#headerAvatar").addEventListener("click", () => {
   if (cloudUser) { openAccount(); return; }
