@@ -169,7 +169,12 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 .grid.cols-1{grid-template-columns:1fr}
 .grid.cols-2{grid-template-columns:repeat(2,1fr)}
 .grid.cols-3{grid-template-columns:repeat(3,1fr);gap:8px}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 3px rgba(15,23,42,.06);overflow:hidden;cursor:pointer;display:flex;flex-direction:column;text-align:left}
+/* Long-pressing a card is also how mobile enters multi-select (see the pointerdown handler below) --
+   without these, that same hold triggers the browser's own gestures instead: a text-selection
+   highlight over the name/meta text, or (on the photo) Chrome's native "Copy/Download/Share image"
+   menu, on top of (or instead of) the app's select action. */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 3px rgba(15,23,42,.06);overflow:hidden;cursor:pointer;display:flex;flex-direction:column;text-align:left;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.card img{-webkit-user-drag:none;user-drag:none}
 /* List view: a single row per item — image, name, price */
 .grid.view-list{display:flex;flex-direction:column;gap:8px}
 .grid.view-list .card{flex-direction:row;align-items:center;gap:12px}
@@ -964,9 +969,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.27";
+const APP_VERSION = "1.6.28";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.28", date: "19 Nov 2026", items: [
+    ["Long-pressing a card to multi-select no longer also triggers the browser's own gestures on top of it -- a text-selection highlight over the name, or Chrome's \"Copy/Download/Share image\" menu over the photo.", ["mobile"]]
+  ] },
   { version: "1.6.27", date: "19 Nov 2026", items: [
     ["Added a quick sign-out button (the red power icon) next to your name and picture in the sidebar, instead of needing to open Account and scroll down to find it.", ["desktop"]]
   ] },
@@ -3761,6 +3769,10 @@ $("#grid").addEventListener("pointermove", e => {
 });
 $("#grid").addEventListener("pointerup", cancelLongPress);
 $("#grid").addEventListener("pointercancel", cancelLongPress);
+// Chrome's own long-press-on-image menu (Copy/Download/Share image, Open in Chrome browser) fires
+// via this same contextmenu event -- the CSS above (-webkit-touch-callout etc.) covers iOS Safari's
+// equivalent callout and text-selection highlighting, but Android Chrome's image menu needs this too.
+$("#grid").addEventListener("contextmenu", e => { if (e.target.closest(".card")) e.preventDefault(); });
 $("#grid").addEventListener("click", e => {
   if (longPressId != null) {
     const sameCard = longPressId === (e.target.closest(".card") || {}).dataset?.id;
