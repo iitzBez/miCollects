@@ -360,9 +360,6 @@ input.has-marquee::placeholder{color:transparent}
 .welcome-form{text-align:left}
 .welcome-form h2{font:700 22px/1.2 var(--display);margin:0 0 4px;text-align:center}
 .welcome .btn{width:100%}
-.local-row{display:flex;align-items:center;justify-content:center;gap:6px}
-.hint-btn{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);background:none;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;display:grid;place-items:center;flex:none;padding:0}
-#wLocalHint{text-align:center}
 @media (prefers-reduced-motion:reduce){.welcome-logo,.welcome-choices,.welcome-form{animation:none;opacity:1}}
 
 /* Desktop: the 1100px content width above was sized for a phone-in-a-WebView (the APK), where a
@@ -414,11 +411,6 @@ input.has-marquee::placeholder{color:transparent}
   <div class="welcome-choices" id="welcomeChoices" hidden>
     <button type="button" class="btn primary" id="wSignIn">Sign in</button>
     <button type="button" class="btn ghost" id="wSignUp">Create account</button>
-    <div class="local-row">
-      <button type="button" class="link plain" id="wLocal">Use on this device only</button>
-      <button type="button" class="hint-btn" id="wLocalHintBtn" aria-label="What does this mean?" aria-expanded="false">?</button>
-    </div>
-    <p class="hint" id="wLocalHint" hidden>Everything stays on this phone — no account needed, nothing sent to the cloud. You can export or import a backup anytime from Settings, and sign in later if you’d like it to sync automatically across devices.</p>
   </div>
   <div class="welcome-form" id="welcomeForm" hidden>
     <h2 id="wfTitle">Sign in</h2>
@@ -736,8 +728,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.14";
+const APP_VERSION = "1.6.15";
 const WHATS_NEW = [
+  { version: "1.6.15", date: "19 Nov 2026", items: [
+    "Removed \"Use on this device only\" from the welcome screen — an account is required going forward.",
+    "Signing out now always takes you back to the sign in/create account screen, instead of landing back on an empty collection screen."
+  ] },
   { version: "1.6.14", date: "19 Nov 2026", items: [
     "On the website, the search bar now sits next to the Brand/Series filters instead of stretching across the toolbar — the mobile web app keeps it where it was.",
     "The Sync icon added last time is now desktop-only — mobile web (and the app) can still pull down to refresh, so it no longer takes up header space there."
@@ -2785,7 +2781,11 @@ function openAccount() {
     <p class="hint settings-version">miCollects v${esc(APP_VERSION)}</p>`;
 
   if (cloudUser) {
-    $("#signOutBtn").addEventListener("click", () => cloudSignOut());
+    // forceWelcomeNext makes the subsequent onAuthStateChanged(null) call open the welcome/login
+    // screen outright (same mechanism the inactivity auto-sign-out already uses) -- now that
+    // accounts are required, landing back on the (now account-less, so empty) collection screen
+    // after signing out isn't a real destination, just a confusing dead end.
+    $("#signOutBtn").addEventListener("click", () => { forceWelcomeNext = true; cloudSignOut(); });
     $("#avatarBtn").addEventListener("click", async () => {
       const hint = $("#avatarHint");
       const P = window.Capacitor && window.Capacitor.Plugins;
@@ -3610,13 +3610,6 @@ function showWelcome() {
   setTimeout(() => { $("#welcomeChoices").hidden = false; }, 1000);
 }
 function finishWelcome() { settings.onboarded = true; saveSettings(); $("#welcome").hidden = true; }
-$("#wLocal").addEventListener("click", finishWelcome);
-$("#wLocalHintBtn").addEventListener("click", () => {
-  const h = $("#wLocalHint");
-  const show = h.hidden;
-  h.hidden = !show;
-  $("#wLocalHintBtn").setAttribute("aria-expanded", String(show));
-});
 $("#wSignIn").addEventListener("click", () => openWelcomeForm("signin"));
 $("#wSignUp").addEventListener("click", () => openWelcomeForm("signup"));
 $("#wfBack").addEventListener("click", () => {
