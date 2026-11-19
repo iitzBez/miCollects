@@ -306,6 +306,11 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
 .star-btn[data-state="half"] .star-fill{clip-path:inset(0 50% 0 0)}
 .star-btn[data-state="full"] .star-fill{clip-path:inset(0 0 0 0)}
 .hint{font-size:13px;color:var(--muted);margin:6px 0 0}
+/* openSignOutConfirm()'s small yes/no dialog -- title, message and buttons all centered instead of
+   left-aligned, since a confirm this short reads better as a centered alert than a left-aligned
+   settings-style sheet. */
+.confirm-body{text-align:center}
+.confirm-body .actions{justify-content:center}
 .auth-msg:not(:empty){text-align:center;color:var(--danger);font-weight:600}
 .hint.warn{color:var(--wish);font-weight:600}
 .url-box{background:var(--sunk);border-radius:14px;padding:12px;margin-bottom:16px}
@@ -532,6 +537,10 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
     border-radius:20px;max-height:85vh;max-height:85dvh;animation:none;padding-top:22px}
   .sheet{max-width:760px;width:calc(100% - 48px)}
   .picker-sheet{max-width:420px;width:calc(100% - 48px)}
+  /* A plain yes/no confirm (Sign out) doesn't need the full settings-style width -- same treatment
+     as .picker-sheet above, just for .sheet when it's carrying this modifier (added/removed by
+     openSignOutConfirm()/hideSheet()). */
+  .sheet.confirm-sheet{max-width:360px}
   /* Every .done-row button (#sDone) is just closeSheet -- a plain ".actions" row with an actual save
      action (Account's "Save details", bulk update's own save, ...) doesn't carry this class, so this
      only removes the now-redundant close buttons, nothing that does real work. */
@@ -970,9 +979,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.32";
+const APP_VERSION = "1.6.33";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.33", date: "19 Nov 2026", items: [
+    "Shrank the sign-out confirmation dialog and centered its title, message and buttons instead of a full-width, left-aligned layout."
+  ] },
   { version: "1.6.32", date: "19 Nov 2026", items: [
     ["Fixed the Collection Summary's close × overlapping its Export button.", ["desktop"]],
     "Removed the blue dashed outline around wishlist item photos — they now look the same as collection ones."
@@ -1392,6 +1404,9 @@ function showSheet() {
 function hideSheet() {
   $("#scrim").hidden = true; $("#sheet").hidden = true; document.body.style.overflow = "";
   sheetOpen = false;
+  // Every way out of a small confirm dialog (Cancel, the X, the scrim, back) runs through here --
+  // strip its narrower/centered modifier so it never leaks onto whatever sheet opens next.
+  $("#sheet").classList.remove("confirm-sheet");
 }
 /* Set right before any programmatic history.back() that closes something we've already handled
    synchronously (hideSheet/exitSelectMode/hidePicker already ran) -- popstate fires later/async, and
@@ -3981,12 +3996,15 @@ $("#sideAcctRow").addEventListener("click", e => {
 // forceWelcomeNext/closeSheet()/cloudSignOut() sequence Account's own signOutBtn uses either way.
 $("#sideSignOutBtn").addEventListener("click", openSignOutConfirm);
 function openSignOutConfirm() {
+  $("#sheet").classList.add("confirm-sheet");
   $("#sheetBody").innerHTML = `
-    <h2 id="sheetTitle">Sign out</h2>
-    <p class="hint">Sign out of miCollects?</p>
-    <div class="actions">
-      <button type="button" class="btn ghost" id="signOutCancelBtn">Cancel</button>
-      <button type="button" class="btn danger" id="signOutConfirmBtn">Sign out</button>
+    <div class="confirm-body">
+      <h2 id="sheetTitle">Sign out</h2>
+      <p class="hint">Sign out of miCollects?</p>
+      <div class="actions">
+        <button type="button" class="btn ghost" id="signOutCancelBtn">Cancel</button>
+        <button type="button" class="btn danger" id="signOutConfirmBtn">Sign out</button>
+      </div>
     </div>`;
   $("#signOutCancelBtn").addEventListener("click", closeSheet);
   $("#signOutConfirmBtn").addEventListener("click", () => {
