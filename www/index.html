@@ -969,9 +969,13 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.28";
+const APP_VERSION = "1.6.29";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.29", date: "19 Nov 2026", items: [
+    ["Picking \"Share link\" now shows the link in a plain copyable textbox with a Copy button, instead of popping open the OS share panel.", ["desktop"]],
+    ["Picking \"Export as PDF\" (or exporting the Collection Summary) now opens a real Save As dialog to choose where the file goes, instead of the OS share panel or a silent save to Downloads.", ["desktop"]]
+  ] },
   { version: "1.6.28", date: "19 Nov 2026", items: [
     ["Long-pressing a card to multi-select no longer also triggers the browser's own gestures on top of it -- a text-selection highlight over the name, or Chrome's \"Copy/Download/Share image\" menu over the photo.", ["mobile"]]
   ] },
@@ -2869,7 +2873,32 @@ async function shareItemsNow(items) {
   await pushShareDoc(token, sorted.map(shareEntry));
   const title = items.length === 1 ? (items[0].name || "Item")
     : `My miCollects ${owned ? "collection" : "wishlist"} (${items.length} items)`;
-  await openShareSheet(shareUrl(token), title);
+  const url = shareUrl(token);
+  // Desktop has no OS share sheet worth popping open (and the desktop browsers that do support
+  // navigator.share tend to offer apps that make little sense for a plain link, e.g. "Save to
+  // Files") -- a plain copyable textbox is the more website-like way to hand someone a link there.
+  // Mobile keeps the real share sheet (or clipboard-copy fallback), unchanged.
+  if (desktopQuery.matches) openShareLinkSheet(url, title);
+  else await openShareSheet(url, title);
+}
+
+function openShareLinkSheet(url, title) {
+  $("#sheetBody").innerHTML = `
+    <h2 id="sheetTitle">Share link</h2>
+    <p class="hint">Anyone with this link can view “${esc(title)}”.</p>
+    <div class="url-row">
+      <input type="text" id="shareLinkInput" value="${esc(url)}" readonly data-no-clear>
+      <button type="button" class="btn primary" id="shareLinkCopyBtn">Copy</button>
+    </div>
+    <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>`;
+  $("#sDone").addEventListener("click", closeSheet);
+  const input = $("#shareLinkInput");
+  $("#shareLinkCopyBtn").addEventListener("click", async () => {
+    input.focus(); input.select();
+    try { await navigator.clipboard.writeText(url); } catch (e) { document.execCommand("copy"); }
+    toast("Link copied");
+  });
+  showSheet();
 }
 
 function refreshSettingsIfOpen() {
@@ -3283,9 +3312,27 @@ async function shareOrDownload(name, blob, mimeType, shareTitle) {
       return;
     } catch (e) { if (/cancel/i.test(String(e && e.message))) return; throw e; }
   }
+  // Desktop Chrome/Edge support navigator.share(files) too, but there's no real "app" worth handing
+  // a PDF to from a desktop browser -- it just pops the OS share panel for no reason. showSaveFilePicker
+  // is the actual desktop equivalent of "save this file": a native Save As dialog the user picks a
+  // real folder in, rather than silently landing in the default Downloads folder.
+  if (desktopQuery.matches && window.showSaveFilePicker) {
+    try {
+      const ext = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
+      const handle = await window.showSaveFilePicker({
+        suggestedName: name,
+        types: mimeType ? [{ description: name, accept: { [mimeType]: ext ? [ext] : [] } }] : undefined
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      toast(`Saved ${name}`);
+      return;
+    } catch (e) { if (e && e.name === "AbortError") return; }
+  }
   try {
     const file = new File([blob], name, { type: mimeType });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: shareTitle }); return; }
+    if (!desktopQuery.matches && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: shareTitle }); return; }
   } catch (e) { if (e && e.name === "AbortError") return; }
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
