@@ -356,9 +356,12 @@ input.has-marquee::placeholder{color:transparent}
 
 /* Desktop: the 1100px content width above was sized for a phone-in-a-WebView (the APK), where a
    screen this wide never happened -- on an actual desktop browser it leaves large unused margins on
-   both sides. Just widening the cap here, not changing layout/columns. */
+   both sides, with the header/buttons nowhere near the actual edge of the screen. Dropping the cap
+   entirely at wide viewports instead of just raising it, so these rows fill the window (still with
+   their existing side padding) and the header actually reaches the edges. Not changing columns or
+   card sizing -- grid.cols-1/.cols-2/.cols-3 still control that. */
 @media (min-width:1300px){
-  .top,.toolbar,.layout-bar,.select-bar,.pill-field,.chips,.grid{max-width:1500px}
+  .top,.toolbar,.layout-bar,.select-bar,.pill-field,.chips,.grid{max-width:none}
 }
 </style>
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-app-compat.js"></script>
