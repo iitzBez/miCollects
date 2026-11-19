@@ -988,9 +988,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.34";
+const APP_VERSION = "1.6.35";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.35", date: "19 Nov 2026", items: [
+    "\"Add using URL\" now works on the website too, not just the app -- it fetches the shop page through our own server instead of the browser trying (and failing) to reach it directly."
+  ] },
   { version: "1.6.34", date: "19 Nov 2026", items: [
     "Visiting the old micollects.pages.dev address now redirects straight to micollects.co.za, so there's one canonical website address instead of two."
   ] },
@@ -1607,9 +1610,13 @@ async function fetchPage(url) {
     if (r.status >= 400) throw Object.assign(new Error("status"), { status: r.status });
     return { html: typeof r.data === "string" ? r.data : JSON.stringify(r.data), finalUrl: r.url || url };
   }
-  const r = await fetch(url, { credentials: "omit" });
+  // Web: the page's own fetch() can't read a cross-origin shop page directly (no CORS there) --
+  // go through our own same-origin proxy function (functions/api/proxy.js) instead, which does the
+  // actual fetch server-side and reports back the real final URL via a header (its own .url would
+  // just be this same-origin proxy URL, not wherever the shop's server actually redirected to).
+  const r = await fetch(`/api/proxy?url=${encodeURIComponent(url)}`, { credentials: "omit" });
   if (!r.ok) throw Object.assign(new Error("status"), { status: r.status });
-  return { html: await r.text(), finalUrl: r.url || url };
+  return { html: await r.text(), finalUrl: r.headers.get("X-Final-Url") || url };
 }
 
 async function fetchImage(src) {
@@ -1622,7 +1629,7 @@ async function fetchImage(src) {
     const ct = String(h["Content-Type"] || h["content-type"] || "image/jpeg").split(";")[0];
     return compressSrc(`data:${ct};base64,${r.data}`);
   }
-  const r = await fetch(src, { credentials: "omit" });
+  const r = await fetch(`/api/proxy?url=${encodeURIComponent(src)}`, { credentials: "omit" });
   if (!r.ok) throw Object.assign(new Error(`image fetch failed (HTTP ${r.status})`), { status: r.status });
   return compress(await r.blob());
 }
@@ -2007,9 +2014,8 @@ async function fillFromUrl(it, paintPhotos, dup) {
     let page;
     try { page = await fetchPage(url); }
     catch (e) {
-      hint.textContent = !nativeHttp()
-        ? "This preview can’t reach other websites. Add using URL works in the Android app."
-        : e.status ? `The site refused the request (error ${e.status}). Some shops block apps, so fill in the details yourself.`
+      hint.textContent = e.status
+        ? `The site refused the request (error ${e.status}). Some shops block this, so fill in the details yourself.`
         : "Couldn’t reach that page. Check the link and your connection.";
       return;
     }
