@@ -416,7 +416,6 @@ input.has-marquee::placeholder{color:transparent}
 
   #sideLogoSlot .brand{margin:0 6px 26px;font-size:24px}
   #sideUtilRow{display:flex;gap:8px;padding:0 6px 22px;flex:none}
-  #sideUtilRow .icon-btn{position:static}
 
   #sideNav{display:flex;flex-direction:column;gap:2px}
   #sideNav .tab-btn,#sideNav #summaryBtn{
@@ -426,7 +425,10 @@ input.has-marquee::placeholder{color:transparent}
   #sideNav .tab-btn:hover,#sideNav #summaryBtn:hover{background:var(--sunk)}
   #sideNav .tab-btn[aria-selected="true"]{background:var(--sunk);color:var(--ink)}
   #sideNav .tab-btn[aria-selected="true"]::before{content:none}
-  #sideNav .side-icon{display:block;width:18px;height:18px;flex:none}
+  /* .icon-btn svg{width:45%;height:45%} sized fine against the original ~38px circular button --
+     once summaryBtn/settingsBtn become full-width rows that 45% is 45% of something much wider,
+     which is what was blowing the pie-chart/gear icons up to the odd oversized look in review. */
+  #sideNav .side-icon,#sideNav #summaryBtn svg,#sideSettingsSlot #settingsBtn svg{width:18px;height:18px;flex:none}
   #sideNav .count{margin-left:auto;background:var(--sunk);color:var(--muted);font-weight:700;
     font-size:11px;padding:1px 7px;border-radius:9px}
   #sideNav .tab-btn[aria-selected="true"] .count{background:var(--bg)}
@@ -440,7 +442,11 @@ input.has-marquee::placeholder{color:transparent}
   #sideSettingsSlot .side-label,#sideNav #summaryBtn .side-label{display:inline}
 
   #sideAcctRow{display:flex;align-items:center;gap:10px;padding:12px 12px 2px;min-width:0}
-  #sideAcctRow #headerAvatar{flex:none;cursor:pointer}
+  /* headerAvatar lands in the DOM after sideAcctLabel (the label div is the slot's only markup;
+     relocation appends the avatar after it), which put the circle to the right of the name instead
+     of the icon-then-text order every other sidebar row uses -- order:-1 fixes the visual position
+     without needing to change how the relocation itself appends things. */
+  #sideAcctRow #headerAvatar{flex:none;cursor:pointer;order:-1}
   #sideAcctLabel{min-width:0;overflow:hidden}
   #sideAcctLabel .name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
   #sideAcctLabel .status{font-size:11px;color:var(--muted)}
@@ -825,8 +831,11 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.17";
+const APP_VERSION = "1.6.18";
 const WHATS_NEW = [
+  { version: "1.6.18", date: "19 Nov 2026", items: [
+    "Fixed visual bugs in the new website sidebar: the What's New badge dot, the Summary/Settings icons, and the account row's avatar order were all off."
+  ] },
   { version: "1.6.17", date: "19 Nov 2026", items: [
     "On the website, replaced the bottom Collection/Wishlist tabs and header icons with a proper, always-visible sidebar (logo, navigation, Settings and account) — the mobile web app and the app are unchanged."
   ] },
