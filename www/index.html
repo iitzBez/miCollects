@@ -377,6 +377,7 @@ input.has-marquee::placeholder{color:transparent}
 /* Welcome / sign-in splash (first launch only) */
 .welcome{position:fixed;inset:0;z-index:30;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;padding:24px;text-align:center}
 .welcome-logo{font:800 clamp(32px,10vw,44px)/1 var(--display);letter-spacing:-.03em;color:var(--ink);margin:0;animation:wlogo .6s ease-out}
+.welcome-version{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);font-size:12px;color:var(--muted);margin:0}
 .welcome-logo span{color:var(--brass)}
 @keyframes wlogo{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
 .welcome-choices,.welcome-form{width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px}
@@ -520,10 +521,14 @@ input.has-marquee::placeholder{color:transparent}
   /* Settings: a left tab rail instead of horizontal pills, so it reads as a real settings panel
      rather than a narrow single column -- .settings-layout only exists in openSettings()'s own
      template, so this never touches any other sheet (account, forms, summary, backup, ...). */
-  .settings-layout{display:flex;gap:28px;align-items:flex-start}
+  .settings-layout{display:flex;gap:28px;align-items:stretch}
   #settingsTabs{flex-direction:column;width:170px;flex:none;border-bottom:0;gap:2px}
   .stab{flex:none;width:100%;text-align:left;border-bottom:0;border-radius:10px;padding:10px 12px}
   .stab[aria-selected="true"]{background:var(--sunk);border-bottom-color:transparent}
+  /* relocateSettingsVersion() moves #settingsVersionText in here -- left-aligned with the tabs above
+     it, and margin-top:auto (the usual flex trick for "push this one item to the end") pins it to
+     the bottom of the rail instead of its mobile styling (.settings-version, centered under Done). */
+  #settingsTabs .settings-version{text-align:left;margin:auto 0 0;padding:10px 12px 0}
   #settingsTabBody{flex:1;min-width:0}
 
   /* The "+" FAB relocates into the header next to the title (setupSidebarRelocation) instead of
@@ -575,6 +580,7 @@ input.has-marquee::placeholder{color:transparent}
     <button type="button" class="link plain" id="wfForgot" hidden>Forgot password?</button>
     <button type="button" class="link plain" id="wfBack">Back</button>
   </div>
+  <p class="welcome-version" id="welcomeVersion"></p>
 </div>
 
 <!-- Desktop-only sidebar: empty slots here, filled by relocateSidebarForViewport() near the bottom
@@ -942,8 +948,13 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.24";
+const APP_VERSION = "1.6.25";
+$("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.25", date: "19 Nov 2026", items: [
+    "The version number now shows at the bottom of the sign-in screen, on both desktop and mobile.",
+    ["In Settings, the version moved from under the Done button into the bottom of the left tab rail.", ["desktop"]]
+  ] },
   { version: "1.6.24", date: "19 Nov 2026", items: [
     "Historical changes now only lists the previous 10 versions instead of every one ever shipped, which was what made that dropdown slow to open. Older entries aren't deleted, just no longer shown there."
   ] },
@@ -3547,7 +3558,8 @@ function openSettings() {
       <div id="settingsTabBody">${tabBody}</div>
     </div>
     <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>
-    <p class="hint settings-version">miCollects v${esc(APP_VERSION)}</p>`;
+    <p class="hint settings-version" id="settingsVersionText">miCollects v${esc(APP_VERSION)}</p>`;
+  relocateSettingsVersion();
 
   $("#settingsTabs").addEventListener("click", e => {
     const b = e.target.closest("[data-stab]"); if (!b || b.dataset.stab === settingsTab) return;
@@ -4034,6 +4046,18 @@ function relocateSelectBarForViewport() {
 }
 desktopQuery.addEventListener("change", relocateSelectBarForViewport);
 relocateSelectBarForViewport();
+
+/* Settings' version line moves into the bottom of the left tab rail on desktop instead of sitting
+   centered under the Done button -- unlike the moves above, #settingsVersionText is a fresh node
+   every time openSettings() re-renders the sheet (no persistent "home" to capture), so this just
+   checks the breakpoint and re-parents it wherever it currently lives; a no-op while Settings isn't
+   open since the id won't exist. */
+function relocateSettingsVersion() {
+  const ver = $("#settingsVersionText");
+  if (!ver) return;
+  (desktopQuery.matches ? $("#settingsTabs") : $("#sheetBody"))?.appendChild(ver);
+}
+desktopQuery.addEventListener("change", relocateSettingsVersion);
 
 /* ---------- Start ---------- */
 // Only on the web -- Capacitor's WebView serves this file from its own local asset scheme, where a
