@@ -288,6 +288,11 @@ input.has-marquee::placeholder{color:transparent}
 .pw-toggle{position:absolute;right:32px;top:50%;transform:translateY(-50%);width:28px;height:28px;border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:50%;display:grid;place-items:center}
 .pw-toggle:hover{background:var(--sunk)}
 .pw-toggle svg{width:18px;height:18px}
+/* Edge adds its own built-in reveal/clear icons to every password field once it has a value --
+   on top of our own .pw-toggle eye button, that's two "show password" icons stacked in the same
+   corner the moment you start typing. These are Edge/old-IE-only pseudo-elements with no effect
+   anywhere else, so hiding them is safe everywhere. */
+input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:none}
 .url-row .clearable{flex:1;min-width:0}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .hint.bu-intro{margin-bottom:16px}
@@ -948,9 +953,13 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.25";
+const APP_VERSION = "1.6.26";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.26", date: "19 Nov 2026", items: [
+    "Signing out from the account/profile screen and then signing back in now takes you to the home screen, instead of straight back to that same profile screen.",
+    ["The password field on the sign-in/sign-up screen could show two overlapping \"show password\" eye icons once you started typing (Edge's own built-in one, on top of ours) — only one shows now.", ["desktop"]]
+  ] },
   { version: "1.6.25", date: "19 Nov 2026", items: [
     "The version number now shows at the bottom of the sign-in screen, on both desktop and mobile.",
     ["In Settings, the version moved from under the Done button into the bottom of the left tab rail.", ["desktop"]]
@@ -3044,8 +3053,11 @@ function openAccount() {
     // forceWelcomeNext makes the subsequent onAuthStateChanged(null) call open the welcome/login
     // screen outright (same mechanism the inactivity auto-sign-out already uses) -- now that
     // accounts are required, landing back on the (now account-less, so empty) collection screen
-    // after signing out isn't a real destination, just a confusing dead end.
-    $("#signOutBtn").addEventListener("click", () => { forceWelcomeNext = true; cloudSignOut(); });
+    // after signing out isn't a real destination, just a confusing dead end. closeSheet() here
+    // matters too: without it this Account sheet stays open (just hidden under the welcome overlay),
+    // so refreshSettingsIfOpen() re-opened it the moment the user signed back in, instead of leaving
+    // them on the home screen.
+    $("#signOutBtn").addEventListener("click", () => { forceWelcomeNext = true; closeSheet(); cloudSignOut(); });
     $("#avatarBtn").addEventListener("click", async () => {
       const hint = $("#avatarHint");
       const P = window.Capacitor && window.Capacitor.Plugins;
