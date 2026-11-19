@@ -190,9 +190,6 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 .ph img{width:100%;height:100%;object-fit:cover;display:block}
 .initial{font:800 56px/1 var(--display);color:var(--muted);opacity:.55}
 .qty{position:absolute;top:8px;right:8px;background:var(--brass);color:var(--brass-ink);font-weight:700;font-size:13px;padding:2px 8px;border-radius:10px}
-/* Wishlist items are drawn as empty slots: dashed outline around a full-colour photo */
-.card.wish .ph{background:transparent}
-.card.wish .ph::after{content:"";position:absolute;inset:8px;border:2px dashed var(--wish);border-radius:10px;pointer-events:none}
 .cb{padding:10px 12px 12px;display:flex;flex-direction:column;gap:3px;flex:1}
 .nm{font-weight:650;font-size:15px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .mt{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -527,6 +524,10 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
   .sheet-x{display:grid;position:absolute;top:14px;right:14px;width:34px;height:34px;border-radius:50%;
     border:0;background:transparent;color:var(--muted);place-items:center;cursor:pointer;z-index:1}
   .sheet-x:hover{background:var(--sunk)}
+  /* Summary is the only sheet with a button of its own (Export) pinned to the same top-right corner
+     as .sheet-x above, via .sheet-head's justify-content:space-between -- without this, the two sit
+     directly on top of each other. */
+  .sheet-head{padding-right:44px}
   .sheet,.picker-sheet{left:50%;right:auto;bottom:auto;top:50%;transform:translate(-50%,-50%);
     border-radius:20px;max-height:85vh;max-height:85dvh;animation:none;padding-top:22px}
   .sheet{max-width:760px;width:calc(100% - 48px)}
@@ -969,9 +970,13 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.31";
+const APP_VERSION = "1.6.32";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.32", date: "19 Nov 2026", items: [
+    ["Fixed the Collection Summary's close × overlapping its Export button.", ["desktop"]],
+    "Removed the blue dashed outline around wishlist item photos — they now look the same as collection ones."
+  ] },
   { version: "1.6.31", date: "19 Nov 2026", items: [
     ["The sidebar's sign-out confirmation is now the site's own styled dialog, instead of the browser's plain native pop-up.", ["desktop"]]
   ] },
