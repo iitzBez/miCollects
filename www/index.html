@@ -2,6 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script>
+// Cloudflare Pages keeps serving the site at its original *.pages.dev URL alongside the custom
+// domain -- bounce that one over to the real domain instead of quietly running the exact same app
+// on two different origins (which also means two separate localStorage/IndexedDB stores and two
+// PWA installs). Runs before anything else loads/renders.
+if (location.hostname === "micollects.pages.dev") {
+  location.replace("https://micollects.co.za" + location.pathname + location.search + location.hash);
+}
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2563EB">
 <title>miCollects</title>
@@ -979,9 +988,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.33";
+const APP_VERSION = "1.6.34";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.34", date: "19 Nov 2026", items: [
+    "Visiting the old micollects.pages.dev address now redirects straight to micollects.co.za, so there's one canonical website address instead of two."
+  ] },
   { version: "1.6.33", date: "19 Nov 2026", items: [
     "Shrank the sign-out confirmation dialog and centered its title, message and buttons instead of a full-width, left-aligned layout."
   ] },
