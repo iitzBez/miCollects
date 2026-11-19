@@ -358,10 +358,21 @@ input.has-marquee::placeholder{color:transparent}
    screen this wide never happened -- on an actual desktop browser it leaves large unused margins on
    both sides, with the header/buttons nowhere near the actual edge of the screen. Dropping the cap
    entirely at wide viewports instead of just raising it, so these rows fill the window (still with
-   their existing side padding) and the header actually reaches the edges. Not changing columns or
-   card sizing -- grid.cols-1/.cols-2/.cols-3 still control that. */
+   their existing side padding) and the header actually reaches the edges.
+   Letting the ROW itself go edge-to-edge made the mobile-sized column counts (1/2/3 tiles per row)
+   stretch each card across a share of a much wider row than they were ever designed for -- a "3 tiles
+   per row" card on a 1900px screen is still a third of 1900px. Replacing the fixed column counts with
+   auto-fill+minmax at this width keeps each card a sane, phone-like size and just adds more columns
+   as the window gets wider, rather than a few huge ones -- the three buttons still pick a density
+   (roughly big/medium/small), just no longer by dividing the full row into exactly that many pieces.
+   The search bar had the same problem (flex:1 1 100% forcing it across the whole, now much wider,
+   toolbar row) -- capped to a sane width instead. */
 @media (min-width:1300px){
   .top,.toolbar,.layout-bar,.select-bar,.pill-field,.chips,.grid{max-width:none}
+  .search{flex:0 1 420px}
+  .grid.cols-1{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+  .grid.cols-2{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+  .grid.cols-3{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
 }
 </style>
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-app-compat.js"></script>
@@ -415,6 +426,13 @@ input.has-marquee::placeholder{color:transparent}
   </button>
   <button class="icon-btn" id="whatsNewBtn" aria-label="What's new">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.45.9 1.15.9 1.9V16h5.4v-.3c0-.75.3-1.45.9-1.9A6 6 0 0 0 12 3Z"/></svg>
+  </button>
+  <!-- Only shown signed in (toggled in render()) -- the pull-to-refresh gesture it mirrors is
+       touch-only (see the touchstart listener below), so it's the only way to manually sync at all
+       on a desktop/mouse browser. Settings > General still has its own "Sync now" button too; this
+       just surfaces the same action without having to go find it. -->
+  <button class="icon-btn" id="headerSyncBtn" aria-label="Sync now" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
   </button>
   <button class="icon-btn" id="settingsBtn" aria-label="Settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
@@ -692,8 +710,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.11";
+const APP_VERSION = "1.6.12";
 const WHATS_NEW = [
+  { version: "1.6.12", date: "19 Nov 2026", items: [
+    "Added a Sync now icon in the header (next to Settings) when you're signed in — mainly for the website, where there's no pull-down-to-refresh gesture, but it works here too.",
+    "On a wide browser window, the collection grid and search bar no longer stretch into giant, hard-to-view tiles and a screen-wide search box."
+  ] },
   { version: "1.6.11", date: "18 Nov 2026", items: [
     "The Collection Summary (and its PDF export) and the collection/wishlist PDF export now show Price Paid/Target Price as the main bold amount per item instead of Value — matching the cards, which already showed what you paid."
   ] },
@@ -899,6 +921,7 @@ function render() {
   $("#title").textContent = owned ? "Collection" : "Wishlist";
 
   $("#whatsNewBtn").classList.toggle("has-news", WHATS_NEW[0].version !== settings.whatsNewSeenVersion);
+  $("#headerSyncBtn").hidden = !cloudUser;
 
   const ha = $("#headerAvatar");
   if (cloudUser) {
@@ -2338,6 +2361,7 @@ async function cloudPullAll(silent) {
   if (cloudSyncing) { toast("Already syncing…"); setHint("Already syncing…"); return; }
   cloudSyncing = true;
   $("#settingsBtn").classList.add("syncing");
+  $("#headerSyncBtn").classList.add("syncing");
   if (!silent) toast("Syncing…");
   setHint("Syncing…");
   try {
@@ -2416,6 +2440,7 @@ async function cloudPullAll(silent) {
   } finally {
     cloudSyncing = false;
     $("#settingsBtn").classList.remove("syncing");
+    $("#headerSyncBtn").classList.remove("syncing");
   }
 }
 
@@ -3462,6 +3487,7 @@ $("#addBtn").addEventListener("click", () => openForm(null));
 $("#settingsBtn").addEventListener("click", openSettings);
 $("#whatsNewBtn").addEventListener("click", openWhatsNew);
 $("#summaryBtn").addEventListener("click", openSummary);
+$("#headerSyncBtn").addEventListener("click", () => cloudPullAll());
 $("#headerAvatar").addEventListener("click", () => {
   if (cloudUser) { openAccount(); return; }
   openPicker("Account", [["signin", "Sign in", ICONS.login], ["signup", "Create account", ICONS.userPlus]], null, v => {
