@@ -378,6 +378,15 @@ input.has-marquee::placeholder{color:transparent}
    near the bottom of the script actually moves the DOM node, on load and on crossing this breakpoint
    either way) rather than stretching across the toolbar on its own -- that's also why it's capped to
    a sane width here instead of flex:1 1 100%. */
+/* Hidden everywhere by default -- #sidebar only exists, and only shows, past the desktop breakpoint
+   below; relocateSidebarForViewport() (near the bottom of the script) is what actually moves the
+   real header/nav/settings/account elements into it. .side-icon/.side-label are bits of markup that
+   only make sense once an element is sitting in the sidebar (an icon next to "Collection"/"Wishlist"
+   there has no mobile equivalent; "Summary"/"Settings" need to go from icon-only to icon+text) -- both
+   stay display:none until a #sidebar-scoped rule below turns them back on. */
+#sidebar{display:none}
+.side-icon,.side-label{display:none}
+#mainArea{margin-left:0}
 @media (min-width:1300px){
   .top,.toolbar,.select-bar,.pill-field,.chips,.grid{max-width:none}
   .search{flex:0 1 420px}
@@ -394,6 +403,47 @@ input.has-marquee::placeholder{color:transparent}
   .grid.view-list .ft>span:first-child{display:inline}
   .grid.view-list .got{margin-top:8px;width:auto;height:36px;padding:0;flex:none}
   .card{border-radius:18px}
+
+  /* Persistent sidebar -- a real website nav shell instead of the bottom Collection/Wishlist tabs
+     (hidden below) and the handful of circular header icons (also relocated in here). Fixed, not
+     sticky/flex-sibling, specifically so it never scrolls with the page: the first version of this
+     was a flex sibling that scrolled along with everything else, which was the whole complaint. */
+  .nav{display:none}
+  #sidebar{display:flex;flex-direction:column;position:fixed;top:0;left:0;width:260px;height:100vh;
+    border-right:1px solid var(--line);padding:28px 18px;box-sizing:border-box;background:var(--bg);
+    overflow-y:auto;z-index:3}
+  #mainArea{margin-left:260px}
+
+  #sideLogoSlot .brand{margin:0 6px 26px;font-size:24px}
+  #sideUtilRow{display:flex;gap:8px;padding:0 6px 22px;flex:none}
+  #sideUtilRow .icon-btn{position:static}
+
+  #sideNav{display:flex;flex-direction:column;gap:2px}
+  #sideNav .tab-btn,#sideNav #summaryBtn{
+    width:100%;height:auto;border-radius:10px;border:0;background:transparent;color:var(--muted);
+    display:flex;align-items:center;gap:12px;padding:11px 12px;justify-content:flex-start;
+    font:650 14px/1 var(--body);cursor:pointer}
+  #sideNav .tab-btn:hover,#sideNav #summaryBtn:hover{background:var(--sunk)}
+  #sideNav .tab-btn[aria-selected="true"]{background:var(--sunk);color:var(--ink)}
+  #sideNav .tab-btn[aria-selected="true"]::before{content:none}
+  #sideNav .side-icon{display:block;width:18px;height:18px;flex:none}
+  #sideNav .count{margin-left:auto;background:var(--sunk);color:var(--muted);font-weight:700;
+    font-size:11px;padding:1px 7px;border-radius:9px}
+  #sideNav .tab-btn[aria-selected="true"] .count{background:var(--bg)}
+
+  #sideBottom{margin-top:auto;display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--line);padding-top:12px}
+  #sideSettingsSlot #settingsBtn{
+    width:100%;height:auto;border-radius:10px;border:0;background:transparent;color:var(--muted);
+    display:flex;align-items:center;gap:12px;padding:11px 12px;justify-content:flex-start;
+    font:650 14px/1 var(--body);cursor:pointer}
+  #sideSettingsSlot #settingsBtn:hover{background:var(--sunk)}
+  #sideSettingsSlot .side-label,#sideNav #summaryBtn .side-label{display:inline}
+
+  #sideAcctRow{display:flex;align-items:center;gap:10px;padding:12px 12px 2px;min-width:0}
+  #sideAcctRow #headerAvatar{flex:none;cursor:pointer}
+  #sideAcctLabel{min-width:0;overflow:hidden}
+  #sideAcctLabel .name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+  #sideAcctLabel .status{font-size:11px;color:var(--muted)}
 }
 </style>
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-app-compat.js"></script>
@@ -431,6 +481,26 @@ input.has-marquee::placeholder{color:transparent}
   </div>
 </div>
 
+<!-- Desktop-only sidebar: empty slots here, filled by relocateSidebarForViewport() near the bottom
+     of the script, which physically moves the real header/nav/settings/account elements in and out
+     of it (and back to their normal mobile spots below) as the viewport crosses 1300px -- so every
+     click handler, badge and render() update already wired to those elements keeps working verbatim,
+     nothing is duplicated. Position:fixed (not sticky) in the desktop CSS, so it never scrolls with
+     the page -- unlike the Concept B mockup, where it was still a flex sibling that scrolled with
+     everything else. -->
+<aside id="sidebar">
+  <div id="sideLogoSlot"></div>
+  <div id="sideUtilRow"></div>
+  <nav id="sideNav" aria-label="Primary"></nav>
+  <div id="sideBottom">
+    <div id="sideSettingsSlot"></div>
+    <div id="sideAcctRow">
+      <div id="sideAcctLabel"></div>
+    </div>
+  </div>
+</aside>
+
+<div id="mainArea">
 <header class="top">
   <div class="top-text">
     <p class="brand">mi<span>Collects</span></p>
@@ -439,6 +509,7 @@ input.has-marquee::placeholder{color:transparent}
   </div>
   <button class="icon-btn" id="summaryBtn" aria-label="Collection summary">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+    <span class="side-label">Summary</span>
   </button>
   <button class="icon-btn" id="whatsNewBtn" aria-label="What's new">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.45.9 1.15.9 1.9V16h5.4v-.3c0-.75.3-1.45.9-1.9A6 6 0 0 0 12 3Z"/></svg>
@@ -454,6 +525,7 @@ input.has-marquee::placeholder{color:transparent}
   </button>
   <button class="icon-btn" id="settingsBtn" aria-label="Settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    <span class="side-label">Settings</span>
   </button>
   <button type="button" class="header-avatar" id="headerAvatar" aria-label="Account"></button>
 </header>
@@ -499,14 +571,21 @@ input.has-marquee::placeholder{color:transparent}
 <div class="chips" id="chips" role="toolbar" aria-label="Filter"></div>
 
 <main class="grid" id="grid" aria-live="polite"></main>
+</div><!-- /#mainArea -->
 
 <button class="fab" id="addBtn" aria-label="Add item">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
 </button>
 
 <nav class="nav" role="tablist" aria-label="Lists">
-  <button role="tab" data-tab="owned" aria-selected="true">Collection <span class="count" id="cOwned">0</span></button>
-  <button role="tab" data-tab="wish" aria-selected="false">Wishlist <span class="count" id="cWish">0</span></button>
+  <button class="tab-btn" role="tab" data-tab="owned" aria-selected="true">
+    <svg class="side-icon" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg>
+    Collection <span class="count" id="cOwned">0</span>
+  </button>
+  <button class="tab-btn" role="tab" data-tab="wish" aria-selected="false">
+    <svg class="side-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg>
+    Wishlist <span class="count" id="cWish">0</span>
+  </button>
 </nav>
 
 <div class="scrim" id="scrim" hidden></div>
@@ -746,8 +825,11 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.16";
+const APP_VERSION = "1.6.17";
 const WHATS_NEW = [
+  { version: "1.6.17", date: "19 Nov 2026", items: [
+    "On the website, replaced the bottom Collection/Wishlist tabs and header icons with a proper, always-visible sidebar (logo, navigation, Settings and account) — the mobile web app and the app are unchanged."
+  ] },
   { version: "1.6.16", date: "19 Nov 2026", items: [
     "Fixed being signed out and refreshing the page landing you back on an (empty) collection screen instead of staying on the sign in screen — the permanent \"already onboarded\" flag from a past sign-in was overriding the current signed-out state."
   ] },
@@ -985,6 +1067,12 @@ function render() {
     ha.setAttribute("aria-label", "Sign in or create account");
     ha.innerHTML = ICONS.account;
   }
+  // Desktop sidebar only (#sideAcctLabel sits unused/empty in the markup on mobile) -- a name+status
+  // line next to the relocated avatar, since an icon alone reads as decoration once it's sitting in
+  // a sidebar row rather than being the obvious "tap to sign in" header button it is on mobile.
+  $("#sideAcctLabel").innerHTML = cloudUser
+    ? `<div class="name">${esc(settings.firstName || "Account")}</div><div class="status">Signed in</div>`
+    : `<div class="name">Sign in</div><div class="status">Sync to the cloud</div>`;
 
   $("#grid").className = "grid " + (state.layout === "list" ? "view-list" : state.layout.replace("grid", "cols-"));
   document.querySelectorAll("#layoutBar [data-layout]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.layout === state.layout)));
@@ -3693,6 +3781,35 @@ function relocateSearchForViewport() {
 const desktopQuery = matchMedia("(min-width:1300px)");
 desktopQuery.addEventListener("change", relocateSearchForViewport);
 relocateSearchForViewport();
+
+/* Same physical-DOM-move trick as the search bar, generalized to every piece that moves into the
+   desktop sidebar -- the brand wordmark, the Collection/Wishlist tab buttons (with their counts),
+   the Summary/Settings/account icons. Each one's real element (with its real click handler, badge,
+   aria state, etc. already wired elsewhere) just relocates; nothing here is a duplicate. Each
+   element's original mobile parent+position is captured once, up front, so crossing back below
+   1300px puts everything back exactly where it started. */
+function setupSidebarRelocation() {
+  const moves = [
+    { el: document.querySelector(".top .brand"), slot: $("#sideLogoSlot") },
+    { el: $("#whatsNewBtn"), slot: $("#sideUtilRow") },
+    { el: $("#headerSyncBtn"), slot: $("#sideUtilRow") },
+    { el: document.querySelector('.nav .tab-btn[data-tab="owned"]'), slot: $("#sideNav") },
+    { el: document.querySelector('.nav .tab-btn[data-tab="wish"]'), slot: $("#sideNav") },
+    { el: $("#summaryBtn"), slot: $("#sideNav") },
+    { el: $("#settingsBtn"), slot: $("#sideSettingsSlot") },
+    { el: $("#headerAvatar"), slot: $("#sideAcctRow") }
+  ].map(m => ({ ...m, homeParent: m.el.parentElement, homeNext: m.el.nextSibling }));
+  return () => {
+    const desktop = desktopQuery.matches;
+    moves.forEach(m => {
+      if (desktop) { if (m.el.parentElement !== m.slot) m.slot.appendChild(m.el); }
+      else if (m.el.parentElement !== m.homeParent) m.homeParent.insertBefore(m.el, m.homeNext);
+    });
+  };
+}
+const relocateSidebarForViewport = setupSidebarRelocation();
+desktopQuery.addEventListener("change", relocateSidebarForViewport);
+relocateSidebarForViewport();
 
 /* ---------- Start ---------- */
 // Only on the web -- Capacitor's WebView serves this file from its own local asset scheme, where a
