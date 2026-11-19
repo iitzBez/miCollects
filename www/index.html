@@ -385,7 +385,7 @@ input.has-marquee::placeholder{color:transparent}
    there has no mobile equivalent; "Summary"/"Settings" need to go from icon-only to icon+text) -- both
    stay display:none until a #sidebar-scoped rule below turns them back on. */
 #sidebar{display:none}
-.side-icon,.side-label{display:none}
+.side-icon,.side-label,.sheet-x{display:none}
 #mainArea{margin-left:0}
 @media (min-width:1300px){
   .top,.toolbar,.select-bar,.pill-field,.chips,.grid{max-width:none}
@@ -450,6 +450,36 @@ input.has-marquee::placeholder{color:transparent}
   #sideAcctLabel{min-width:0;overflow:hidden}
   #sideAcctLabel .name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
   #sideAcctLabel .status{font-size:11px;color:var(--muted)}
+
+  /* Sheets/pickers: centered dialogs with a real close button instead of bottom sheets you can only
+     dismiss by tapping outside -- the grab handle (a swipe-to-dismiss affordance) is meaningless
+     once there's nothing to swipe, and the slide-up keyframe fights the centering transform, so both
+     are turned off here rather than adapted. */
+  .grab{display:none}
+  .sheet-x{display:grid;position:absolute;top:14px;right:14px;width:34px;height:34px;border-radius:50%;
+    border:0;background:transparent;color:var(--muted);place-items:center;cursor:pointer;z-index:1}
+  .sheet-x:hover{background:var(--sunk)}
+  .sheet,.picker-sheet{left:50%;right:auto;bottom:auto;top:50%;transform:translate(-50%,-50%);
+    border-radius:20px;max-height:85vh;max-height:85dvh;animation:none;padding-top:22px}
+  .sheet{max-width:760px;width:calc(100% - 48px)}
+  .picker-sheet{max-width:420px;width:calc(100% - 48px)}
+
+  /* Settings: a left tab rail instead of horizontal pills, so it reads as a real settings panel
+     rather than a narrow single column -- .settings-layout only exists in openSettings()'s own
+     template, so this never touches any other sheet (account, forms, summary, backup, ...). */
+  .settings-layout{display:flex;gap:28px;align-items:flex-start}
+  #settingsTabs{flex-direction:column;width:170px;flex:none;border-bottom:0;gap:2px}
+  .stab{flex:none;width:100%;text-align:left;border-bottom:0;border-radius:10px;padding:10px 12px}
+  .stab[aria-selected="true"]{background:var(--sunk);border-bottom-color:transparent}
+  #settingsTabBody{flex:1;min-width:0}
+
+  /* The "+" FAB relocates into the header next to the title (setupSidebarRelocation) instead of
+     floating over the bottom-right corner -- restyled from a circular mobile action button into an
+     ordinary labelled one. */
+  .top #addBtn{position:static;width:auto;height:44px;border-radius:10px;padding:0 18px;
+    display:flex;align-items:center;gap:8px;box-shadow:none;flex:none;align-self:center}
+  .top #addBtn svg{width:18px;height:18px}
+  .top #addBtn .side-label{display:inline;font:700 14px/1 var(--body);white-space:nowrap}
 }
 </style>
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-app-compat.js"></script>
@@ -579,8 +609,12 @@ input.has-marquee::placeholder{color:transparent}
 <main class="grid" id="grid" aria-live="polite"></main>
 </div><!-- /#mainArea -->
 
+<!-- Relocated into the header next to the title on desktop (setupSidebarRelocation's moves array),
+     restyled from a circular mobile FAB into a labelled button -- #addBtnLabel text is kept in sync
+     with the active tab in render(), same as #title. -->
 <button class="fab" id="addBtn" aria-label="Add item">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+  <span class="side-label" id="addBtnLabel">Add to collection</span>
 </button>
 
 <nav class="nav" role="tablist" aria-label="Lists">
@@ -597,12 +631,21 @@ input.has-marquee::placeholder{color:transparent}
 <div class="scrim" id="scrim" hidden></div>
 <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
   <div class="grab"></div>
+  <!-- Desktop-only (CSS) -- a bottom sheet you swipe/tap-outside to dismiss doesn't have a close
+       button because the gesture IS the close button; once it's a centered dialog on desktop, that
+       affordance is gone, so there needs to be an actual visible one. -->
+  <button type="button" class="sheet-x" id="sheetCloseBtn" aria-label="Close">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+  </button>
   <div id="sheetBody"></div>
 </section>
 
 <div class="scrim" id="pickerScrim" hidden></div>
 <section class="picker-sheet" id="pickerSheetEl" role="dialog" aria-modal="true" aria-labelledby="pickerTitle" hidden>
   <div class="grab"></div>
+  <button type="button" class="sheet-x" id="pickerCloseBtn" aria-label="Close">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+  </button>
   <h2 id="pickerTitle"></h2>
   <div id="pickerOptions" role="radiogroup"></div>
 </section>
@@ -831,8 +874,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.18";
+const APP_VERSION = "1.6.19";
 const WHATS_NEW = [
+  { version: "1.6.19", date: "19 Nov 2026", items: [
+    "On the website: Settings and every other popup now open as a centered panel with a visible × to close, instead of a mobile-style sheet you can only dismiss by tapping outside. Settings specifically also gained a proper left-hand tab rail.",
+    "On the website, the \"+\" button to add an item moved into the header as a labelled \"Add to collection\"/\"Add to wishlist\" button instead of floating over the corner."
+  ] },
   { version: "1.6.18", date: "19 Nov 2026", items: [
     "Fixed visual bugs in the new website sidebar: the What's New badge dot, the Summary/Settings icons, and the account row's avatar order were all off."
   ] },
@@ -1061,6 +1108,7 @@ function render() {
   const owned = state.tab === "owned";
   const tabItems = state.items.filter(i => i.list === state.tab);
   $("#title").textContent = owned ? "Collection" : "Wishlist";
+  $("#addBtnLabel").textContent = owned ? "Add to collection" : "Add to wishlist";
 
   $("#whatsNewBtn").classList.toggle("has-news", WHATS_NEW[0].version !== settings.whatsNewSeenVersion);
   $("#headerSyncBtn").hidden = !cloudUser;
@@ -1284,6 +1332,8 @@ addEventListener("popstate", () => {
 });
 $("#scrim").addEventListener("click", closeSheet);
 $("#pickerScrim").addEventListener("click", closePicker);
+$("#sheetCloseBtn").addEventListener("click", closeSheet);
+$("#pickerCloseBtn").addEventListener("click", closePicker);
 addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (pickerOpen) { closePicker(); return; }
@@ -3359,10 +3409,12 @@ function openSettings() {
   const tabBody = settingsTab === "api" ? apiTabHtml() : settingsTab === "lists" ? listsTabHtml() : settingsTab === "fields" ? fieldsTabHtml() : generalTabHtml();
   $("#sheetBody").innerHTML = `
     <h2 id="sheetTitle">Settings</h2>
-    <div class="settings-tabs" id="settingsTabs" role="tablist">
-      ${tabs.map(([k, l]) => `<button type="button" class="stab" data-stab="${k}" role="tab" aria-selected="${settingsTab === k}">${esc(l)}</button>`).join("")}
+    <div class="settings-layout">
+      <div class="settings-tabs" id="settingsTabs" role="tablist">
+        ${tabs.map(([k, l]) => `<button type="button" class="stab" data-stab="${k}" role="tab" aria-selected="${settingsTab === k}">${esc(l)}</button>`).join("")}
+      </div>
+      <div id="settingsTabBody">${tabBody}</div>
     </div>
-    <div id="settingsTabBody">${tabBody}</div>
     <div class="actions done-row"><button class="btn primary" id="sDone">Done</button></div>
     <p class="hint settings-version">miCollects v${esc(APP_VERSION)}</p>`;
 
@@ -3806,7 +3858,8 @@ function setupSidebarRelocation() {
     { el: document.querySelector('.nav .tab-btn[data-tab="wish"]'), slot: $("#sideNav") },
     { el: $("#summaryBtn"), slot: $("#sideNav") },
     { el: $("#settingsBtn"), slot: $("#sideSettingsSlot") },
-    { el: $("#headerAvatar"), slot: $("#sideAcctRow") }
+    { el: $("#headerAvatar"), slot: $("#sideAcctRow") },
+    { el: $("#addBtn"), slot: document.querySelector(".top") }
   ].map(m => ({ ...m, homeParent: m.el.parentElement, homeNext: m.el.nextSibling }));
   return () => {
     const desktop = desktopQuery.matches;
