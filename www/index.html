@@ -988,9 +988,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.35";
+const APP_VERSION = "1.6.36";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.36", date: "19 Nov 2026", items: [
+    ["Fixed Collection/Wishlist in the sidebar no longer highlighting whichever one was active after switching tabs.", ["desktop"]]
+  ] },
   { version: "1.6.35", date: "19 Nov 2026", items: [
     "\"Add using URL\" now works on the website too, not just the app -- it fetches the shop page through our own server instead of the browser trying (and failing) to reach it directly."
   ] },
@@ -1380,7 +1383,11 @@ function render() {
 
   $("#cOwned").textContent = state.items.filter(i => i.list === "owned").length;
   $("#cWish").textContent = state.items.filter(i => i.list === "wish").length;
-  document.querySelectorAll(".nav button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === state.tab)));
+  // Not scoped to ".nav" -- on desktop these buttons physically relocate into #sideNav (see
+  // setupSidebarRelocation), so they're no longer inside .nav at all once that's happened, and this
+  // update would silently stop finding them (the click still worked and switched tabs, just without
+  // ever re-highlighting either button again).
+  document.querySelectorAll(".tab-btn[data-tab]").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === state.tab)));
 }
 
 /* Toggling one card's selection used to call the full render() -- rebuilding every card's HTML from
