@@ -121,7 +121,12 @@ input[type="search"]::-webkit-search-cancel-button,input[type="search"]::-webkit
 .select-bar{display:flex;align-items:center;gap:10px;padding:6px 16px 10px;max-width:1100px;margin:0 auto;flex-wrap:wrap}
 .select-bar .select-count{color:var(--muted);font-size:14px;flex:1}
 #selectShareBtn, #selectBulkBtn, #selectDeleteBtn{margin-left:auto}
-.sel-dot{position:absolute;top:8px;left:8px;width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:rgba(15,23,42,.35);box-shadow:0 1px 3px rgba(15,23,42,.3);z-index:1}
+/* Always in the DOM now (used to only render once state.selecting was already true) so desktop can
+   reveal it on hover -- see the desktop media query -- as an entry point into select mode that
+   doesn't need a long-press (a touch-only gesture a mouse has no equivalent for). opacity, not
+   display, both so the transition can animate and so it still occupies its layout space either way. */
+.sel-dot{position:absolute;top:8px;left:8px;width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:rgba(15,23,42,.35);box-shadow:0 1px 3px rgba(15,23,42,.3);z-index:1;opacity:0;transition:opacity .15s ease}
+.card.selecting .sel-dot{opacity:1}
 .card.selected .sel-dot{background:var(--brass);border-color:var(--brass)}
 .card.selected .sel-dot::after{content:"";position:absolute;left:7px;top:3px;width:6px;height:11px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
 .card.selecting{cursor:pointer}
@@ -494,6 +499,13 @@ input.has-marquee::placeholder{color:transparent}
     display:flex;align-items:center;gap:8px;box-shadow:none;flex:none;align-self:center}
   .top #addBtn svg{width:18px;height:18px}
   .top #addBtn .side-label{display:inline;font:700 14px/1 var(--body);white-space:nowrap}
+
+  /* Hover a card to reveal its selection dot without already being in select mode -- the only way
+     in on mobile is a long-press, a touch-only gesture a mouse has no equivalent for. Clicking the
+     dot itself (see the #grid click handler) enters select mode with just that one item checked;
+     everything past that point (the action bar, Select all, bulk update, share, delete) is the exact
+     same .select-bar this reuses unchanged, not a new rebuilt one. */
+  .card:hover .sel-dot{opacity:1}
 }
 </style>
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-app-compat.js"></script>
@@ -888,8 +900,11 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.20";
+const APP_VERSION = "1.6.21";
 const WHATS_NEW = [
+  { version: "1.6.21", date: "19 Nov 2026", items: [
+    "On the website, multi-selecting items no longer needs a long-press (a touch gesture a mouse can't do) — hover any card and click its selection dot to start, same Select all/Edit/Share/Delete bar as before."
+  ] },
   { version: "1.6.20", date: "19 Nov 2026", items: [
     "On the website: the misplaced pulsing dot near Settings is gone (it belonged on the Sync icon only), the whole account row in the sidebar is clickable now instead of just the small avatar, and the redundant \"Done\" button on every popup is removed now that × closes it."
   ] },
@@ -1091,7 +1106,7 @@ function card(i) {
     ? `<span class="pri p${p}">${PRI[p]}</span><span class="val">${i.target ? money(i.target) : ""}</span>`
     : `<span>${esc(i.condition || "")}</span><span class="val">${i.paid ? money(+i.paid || 0) : ""}</span>`;
   return `<div class="card${wish ? " wish" : ""}${selecting ? " selecting" : ""}${selected ? " selected" : ""}" role="button" tabindex="0" data-id="${esc(i.id)}" aria-label="${esc(i.name)}" aria-pressed="${selecting ? String(selected) : "false"}">
-    <div class="ph">${selecting ? `<span class="sel-dot" aria-hidden="true"></span>` : ""}${ph}${!wish && +i.qty > 1 ? `<span class="qty">×${+i.qty}</span>` : ""}</div>
+    <div class="ph"><span class="sel-dot" aria-hidden="true"></span>${ph}${!wish && +i.qty > 1 ? `<span class="qty">×${+i.qty}</span>` : ""}</div>
     <div class="cb">
       <div class="nm">${esc(i.name)}</div>
       ${meta ? `<div class="mt">${meta}</div>` : ""}
@@ -3619,6 +3634,15 @@ $("#grid").addEventListener("click", e => {
   if (got && !state.selecting) { e.stopPropagation(); openForm(state.items.find(i => i.id === got.dataset.got), "owned"); return; }
   const c = e.target.closest(".card");
   if (!c) return;
+  // Desktop only -- clicking the hover-revealed dot (see the desktop CSS above) when nothing's
+  // selected yet enters select mode with just this one item checked, the same place a long-press
+  // lands on mobile. Only reachable here at all when !state.selecting, since once selecting the
+  // branch below already handles every click on the card (dot included) as a toggle.
+  if (!state.selecting && desktopQuery.matches && e.target.closest(".sel-dot")) {
+    e.stopPropagation();
+    enterSelectMode([c.dataset.id]);
+    return;
+  }
   if (state.selecting && c.classList.contains("selecting")) {
     const id = c.dataset.id;
     const nowSelected = !state.selected.has(id);
