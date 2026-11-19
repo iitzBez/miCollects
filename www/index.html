@@ -969,9 +969,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.29";
+const APP_VERSION = "1.6.30";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.30", date: "19 Nov 2026", items: [
+    ["Image Recognition now works on the website too, not just the app -- tapping it opens your device's own file picker (no camera option, since there's nothing to take a photo with) instead of saying it's Android-only.", ["desktop", "mobile"]]
+  ] },
   { version: "1.6.29", date: "19 Nov 2026", items: [
     ["Picking \"Share link\" now shows the link in a plain copyable textbox with a Copy button, instead of popping open the OS share panel.", ["desktop"]],
     ["Picking \"Export as PDF\" (or exporting the Collection Summary) now opens a real Save As dialog to choose where the file goes, instead of the OS share panel or a silent save to Downloads.", ["desktop"]]
@@ -1701,22 +1704,36 @@ function pickPhotoSource() {
 }
 function wireCamera(it, paintPhotos, dup) {
   const camBatch = [];
-  const btn = $("#camBtn"), doneBtn = $("#camDoneBtn"), hint = $("#camHint");
+  const btn = $("#camBtn"), doneBtn = $("#camDoneBtn"), hint = $("#camHint"), fileIn = $("#camFileIn");
   const show = msg => { hint.hidden = false; hint.textContent = msg; };
+  const addOne = compressed => {
+    if (camBatch.length === 0) photos.unshift(compressed); else if (photos.length < MAXP) photos.push(compressed);
+    camBatch.push(compressed);
+  };
+  // Shared by the native (Capacitor) and web (file input) paths below, once whichever one of them
+  // actually added at least one photo to camBatch.
+  const afterAdd = () => {
+    paintPhotos();
+    doneBtn.hidden = false; doneBtn.disabled = false; doneBtn.textContent = "Recognise photos"; doneBtn.classList.add("ai-glow");
+    if (camBatch.length >= CAM_MAX) { btn.hidden = true; show(`Photo ${camBatch.length} of ${CAM_MAX} added. Tap Recognise to fill in the details.`); }
+    else { btn.textContent = "Add Another Photo"; show(`Photo ${camBatch.length} of ${CAM_MAX} added — add the back or a price tag, or tap Recognise to fill in details now.`); }
+  };
 
   btn.addEventListener("click", async () => {
     const P = window.Capacitor && window.Capacitor.Plugins;
-    if (!P || !P.Camera) { show("Adding a photo only works in the Android app, not this preview."); return; }
+    if (!P || !P.Camera) {
+      // Web (desktop or mobile browser): there's no native camera plugin here, and no camera-vs-
+      // gallery choice to make either -- a photo for recognition can only come from a file already
+      // on the device, so skip straight to the OS's own (camera-less) file picker.
+      fileIn.click();
+      return;
+    }
     const source = await pickPhotoSource();
     if (!source) return;
     const remaining = CAM_MAX - camBatch.length;
     if (remaining <= 0) return;
     btn.disabled = true;
     try {
-      const addOne = compressed => {
-        if (camBatch.length === 0) photos.unshift(compressed); else if (photos.length < MAXP) photos.push(compressed);
-        camBatch.push(compressed);
-      };
       // Gallery picks can be multiple (up to however many of the 3 recognition slots are left) --
       // getPhoto() only ever returns one, so use pickImages() there instead, same fix as the regular
       // "Add photos" tiles. A camera shot is still one at a time; that's inherent to taking a photo.
@@ -1735,12 +1752,22 @@ function wireCamera(it, paintPhotos, dup) {
         catch (e) { show(e.message || "That photo couldn’t be used."); return; }
         addOne(compressed);
       }
-      paintPhotos();
-      doneBtn.hidden = false; doneBtn.disabled = false; doneBtn.textContent = "Recognise photos"; doneBtn.classList.add("ai-glow");
-      if (camBatch.length >= CAM_MAX) { btn.hidden = true; show(`Photo ${camBatch.length} of ${CAM_MAX} added. Tap Recognise to fill in the details.`); }
-      else { btn.textContent = "Add Another Photo"; show(`Photo ${camBatch.length} of ${CAM_MAX} added — add the back or a price tag, or tap Recognise to fill in details now.`); }
+      afterAdd();
     } catch (e) { if (!/cancel/i.test(String(e && e.message))) show("Couldn’t get that photo."); }
     finally { btn.disabled = false; }
+  });
+
+  fileIn.addEventListener("change", async e => {
+    const remaining = CAM_MAX - camBatch.length;
+    const files = [...(e.target.files || [])].slice(0, remaining);
+    e.target.value = "";
+    if (!files.length) return;
+    btn.disabled = true;
+    try {
+      let got = 0;
+      for (const f of files) { try { addOne(await compress(f)); got++; } catch (err) { show(err.message || "Couldn’t read that photo."); } }
+      if (got) afterAdd();
+    } finally { btn.disabled = false; }
   });
 
   doneBtn.addEventListener("click", async () => {
@@ -2186,6 +2213,7 @@ function openForm(item, convertTo) {
     <div class="photo-main" id="photoMain"></div>
     <div class="thumbs" id="thumbs"></div>
     <input type="file" accept="image/*" id="photoIn" multiple hidden>
+    <input type="file" accept="image/*" id="camFileIn" multiple hidden>
     <div class="field">
       <label for="f-name">Name</label>
       <input id="f-name" value="${val(it.name)}" autocomplete="off" placeholder="e.g. Charizard Base Set 4/102">
