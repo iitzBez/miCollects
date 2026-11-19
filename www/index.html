@@ -969,9 +969,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.30";
+const APP_VERSION = "1.6.31";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.31", date: "19 Nov 2026", items: [
+    ["The sidebar's sign-out confirmation is now the site's own styled dialog, instead of the browser's plain native pop-up.", ["desktop"]]
+  ] },
   { version: "1.6.30", date: "19 Nov 2026", items: [
     ["Image Recognition now works on the website too, not just the app -- tapping it opens your device's own file picker (no camera option, since there's nothing to take a photo with) instead of saying it's Android-only.", ["desktop", "mobile"]]
   ] },
@@ -3968,12 +3971,24 @@ $("#sideAcctRow").addEventListener("click", e => {
   $("#headerAvatar").click();
 });
 // A one-click shortcut to sign out right from the sidebar, instead of opening Account and scrolling
-// down to its own "Sign out" button -- same confirm() already used for bulk item delete, and the
-// same forceWelcomeNext/closeSheet()/cloudSignOut() sequence Account's own signOutBtn uses.
-$("#sideSignOutBtn").addEventListener("click", () => {
-  if (!confirm("Sign out of miCollects?")) return;
-  forceWelcomeNext = true; closeSheet(); cloudSignOut();
-});
+// down to its own "Sign out" button -- confirmed via the app's own sheet (openSignOutConfirm) rather
+// than the browser's native confirm() dialog, which looks nothing like the rest of the site. Same
+// forceWelcomeNext/closeSheet()/cloudSignOut() sequence Account's own signOutBtn uses either way.
+$("#sideSignOutBtn").addEventListener("click", openSignOutConfirm);
+function openSignOutConfirm() {
+  $("#sheetBody").innerHTML = `
+    <h2 id="sheetTitle">Sign out</h2>
+    <p class="hint">Sign out of miCollects?</p>
+    <div class="actions">
+      <button type="button" class="btn ghost" id="signOutCancelBtn">Cancel</button>
+      <button type="button" class="btn danger" id="signOutConfirmBtn">Sign out</button>
+    </div>`;
+  $("#signOutCancelBtn").addEventListener("click", closeSheet);
+  $("#signOutConfirmBtn").addEventListener("click", () => {
+    forceWelcomeNext = true; closeSheet(); cloudSignOut();
+  });
+  showSheet();
+}
 
 /* ---------- Pull to sync ---------- */
 /* Anywhere on the home screen (either tab), dragging down while already scrolled to the top pulls
