@@ -46,21 +46,23 @@ button,input,select,textarea{font:inherit;color:inherit}
 img{max-width:100%}
 
 /* Header */
-.top{padding:20px 16px 6px;display:flex;align-items:flex-start;gap:clamp(6px,2vw,12px);max-width:1100px;margin:0 auto}
+.top{padding:20px 16px 6px;display:flex;align-items:flex-start;gap:clamp(4px,1.3vw,12px);max-width:1100px;margin:0 auto}
 .top-text{flex:1;min-width:0}
 /* overflow:hidden+ellipsis so "Collection"/"Wishlist" -- one unbreakable word -- clips instead of
    visually overflowing under the header icons once the icons' own shrinking leaves it too little
    room; min-width:0 on .top-text above is what lets this flex child's box (and so this) shrink
-   past its content's width in the first place. */
-h1{font:800 clamp(30px,8vw,40px)/1.05 var(--display);letter-spacing:-.025em;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+   past its content's width in the first place. Font clamp and the icon/gap clamps below were all
+   tuned together for 4 icon buttons + the avatar -- adding the Sync button as a 5th made the title
+   clip on a narrow phone ("Colle…") until these were tightened to make room again. */
+h1{font:800 clamp(22px,6.5vw,40px)/1.05 var(--display);letter-spacing:-.025em;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #stats{margin:6px 0 0;color:var(--muted);font-size:14px;min-height:20px}
 .brand{margin:0 0 6px;font:800 15px/1 var(--display);letter-spacing:-.01em;color:var(--ink)}
 .brand span{color:var(--brass)}
 /* Header icon buttons shrink with the viewport (rather than staying a fixed 44px) so a narrow
    phone screen always has room for them beside the title without overlapping it; inner icons are
    sized in % of the button so they scale down together instead of needing their own breakpoints. */
-.icon-btn{position:relative;width:clamp(34px,10.5vw,44px);height:clamp(34px,10.5vw,44px);border-radius:50%;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;flex:none}
-.header-avatar{width:clamp(34px,10.5vw,44px);height:clamp(34px,10.5vw,44px);padding:0;border-radius:50%;border:1px solid var(--line);background:var(--sunk);display:grid;place-items:center;overflow:hidden;flex:none;cursor:pointer;font:700 clamp(12px,3.8vw,16px)/1 var(--display);color:var(--muted)}
+.icon-btn{position:relative;width:clamp(32px,9vw,44px);height:clamp(32px,9vw,44px);border-radius:50%;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;flex:none}
+.header-avatar{width:clamp(32px,9vw,44px);height:clamp(32px,9vw,44px);padding:0;border-radius:50%;border:1px solid var(--line);background:var(--sunk);display:grid;place-items:center;overflow:hidden;flex:none;cursor:pointer;font:700 clamp(12px,3.8vw,16px)/1 var(--display);color:var(--muted)}
 .header-avatar img{width:100%;height:100%;object-fit:cover}
 .header-avatar svg{width:50%;height:50%}
 /* A small floating badge that moves and rotates with the drag, not a bar -- the page underneath never
@@ -359,20 +361,30 @@ input.has-marquee::placeholder{color:transparent}
    both sides, with the header/buttons nowhere near the actual edge of the screen. Dropping the cap
    entirely at wide viewports instead of just raising it, so these rows fill the window (still with
    their existing side padding) and the header actually reaches the edges.
-   Letting the ROW itself go edge-to-edge made the mobile-sized column counts (1/2/3 tiles per row)
-   stretch each card across a share of a much wider row than they were ever designed for -- a "3 tiles
-   per row" card on a 1900px screen is still a third of 1900px. Replacing the fixed column counts with
-   auto-fill+minmax at this width keeps each card a sane, phone-like size and just adds more columns
-   as the window gets wider, rather than a few huge ones -- the three buttons still pick a density
-   (roughly big/medium/small), just no longer by dividing the full row into exactly that many pieces.
-   The search bar had the same problem (flex:1 1 100% forcing it across the whole, now much wider,
-   toolbar row) -- capped to a sane width instead. */
+   The 1/2/3-tiles-per-row toggle is a mobile density preference -- on an actual desktop browser the
+   brief was a fixed, online-shop-style grid instead (a handful of larger, nicely-spaced tiles per
+   row, not a user-picked density), so the layout buttons are hidden here and every grid variant
+   (cols-1/2/3, and view-list for anyone whose saved layout is "list") collapses to the same fixed
+   4-column grid with more breathing room between cards. The .view-list overrides below undo that
+   mode's row-style layout (horizontal card, hidden category line, etc.) back to the normal tile look,
+   since its own toggle button is gone here too.
+   The search bar had the same stretching problem (flex:1 1 100% forcing it across the whole, now much
+   wider, toolbar row) -- capped to a sane width instead. */
 @media (min-width:1300px){
-  .top,.toolbar,.layout-bar,.select-bar,.pill-field,.chips,.grid{max-width:none}
+  .top,.toolbar,.select-bar,.pill-field,.chips,.grid{max-width:none}
   .search{flex:0 1 420px}
-  .grid.cols-1{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
-  .grid.cols-2{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
-  .grid.cols-3{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+  .layout-bar{display:none}
+  .grid,.grid.cols-1,.grid.cols-2,.grid.cols-3,.grid.view-list{display:grid;grid-template-columns:repeat(4,1fr);gap:28px}
+  .grid.view-list .card{flex-direction:column;align-items:stretch;gap:0}
+  .grid.view-list .ph{width:auto;height:auto;border-radius:0;aspect-ratio:1}
+  .grid.view-list .qty{font-size:13px;padding:2px 8px;top:8px;right:8px}
+  .grid.view-list .cb{flex-direction:column;align-items:normal;padding:10px 12px 12px;gap:3px}
+  .grid.view-list .nm{-webkit-line-clamp:2}
+  .grid.view-list .mt{display:block}
+  .grid.view-list .ft{margin-top:auto;flex-wrap:wrap;gap:2px 6px}
+  .grid.view-list .ft>span:first-child{display:inline}
+  .grid.view-list .got{margin-top:8px;width:auto;height:36px;padding:0;flex:none}
+  .card{border-radius:18px}
 }
 </style>
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-app-compat.js"></script>
@@ -710,8 +722,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.12";
+const APP_VERSION = "1.6.13";
 const WHATS_NEW = [
+  { version: "1.6.13", date: "19 Nov 2026", items: [
+    "Fixed the new Sync icon squeezing the \"Collection\"/\"Wishlist\" title down to \"Colle…\" on a narrow phone screen.",
+    "On a wide browser window, the 1/2/3-tiles-per-row layout buttons are now hidden and the collection always shows as a fixed, online-shop-style 4-per-row grid with more spacing — the mobile app's layout buttons are unaffected."
+  ] },
   { version: "1.6.12", date: "19 Nov 2026", items: [
     "Added a Sync now icon in the header (next to Settings) when you're signed in — mainly for the website, where there's no pull-down-to-refresh gesture, but it works here too.",
     "On a wide browser window, the collection grid and search bar no longer stretch into giant, hard-to-view tiles and a screen-wide search box."
