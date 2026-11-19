@@ -440,8 +440,18 @@ input.has-marquee::placeholder{color:transparent}
     font:650 14px/1 var(--body);cursor:pointer}
   #sideSettingsSlot #settingsBtn:hover{background:var(--sunk)}
   #sideSettingsSlot .side-label,#sideNav #summaryBtn .side-label{display:inline}
+  /* settingsBtn also gets .syncing added to it (a leftover small-icon spinner dot, meant for its
+     original mobile circular-button size) -- harmless there, but once it's a wide sidebar row that
+     top:2px;right:2px dot floats off to the side of the whole row instead of sitting on an icon.
+     headerSyncBtn (in #sideUtilRow) is the real desktop sync indicator; this one's just suppressed. */
+  #sideSettingsSlot #settingsBtn::after{display:none}
 
-  #sideAcctRow{display:flex;align-items:center;gap:10px;padding:12px 12px 2px;min-width:0}
+  /* Clicking anywhere in the row (not just the small avatar circle) opens Account, matching how the
+     Settings row above it already works -- forwards to headerAvatar's own click handler unless the
+     click already landed on headerAvatar itself, which would otherwise fire twice. */
+  #sideAcctRow{display:flex;align-items:center;gap:10px;padding:12px 12px 2px;min-width:0;
+    border-radius:10px;cursor:pointer}
+  #sideAcctRow:hover{background:var(--sunk)}
   /* headerAvatar lands in the DOM after sideAcctLabel (the label div is the slot's only markup;
      relocation appends the avatar after it), which put the circle to the right of the name instead
      of the icon-then-text order every other sidebar row uses -- order:-1 fixes the visual position
@@ -463,6 +473,10 @@ input.has-marquee::placeholder{color:transparent}
     border-radius:20px;max-height:85vh;max-height:85dvh;animation:none;padding-top:22px}
   .sheet{max-width:760px;width:calc(100% - 48px)}
   .picker-sheet{max-width:420px;width:calc(100% - 48px)}
+  /* Every .done-row button (#sDone) is just closeSheet -- a plain ".actions" row with an actual save
+     action (Account's "Save details", bulk update's own save, ...) doesn't carry this class, so this
+     only removes the now-redundant close buttons, nothing that does real work. */
+  .done-row{display:none}
 
   /* Settings: a left tab rail instead of horizontal pills, so it reads as a real settings panel
      rather than a narrow single column -- .settings-layout only exists in openSettings()'s own
@@ -874,8 +888,11 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.19";
+const APP_VERSION = "1.6.20";
 const WHATS_NEW = [
+  { version: "1.6.20", date: "19 Nov 2026", items: [
+    "On the website: the misplaced pulsing dot near Settings is gone (it belonged on the Sync icon only), the whole account row in the sidebar is clickable now instead of just the small avatar, and the redundant \"Done\" button on every popup is removed now that × closes it."
+  ] },
   { version: "1.6.19", date: "19 Nov 2026", items: [
     "On the website: Settings and every other popup now open as a centered panel with a visible × to close, instead of a mobile-style sheet you can only dismiss by tapping outside. Settings specifically also gained a proper left-hand tab rail.",
     "On the website, the \"+\" button to add an item moved into the header as a labelled \"Add to collection\"/\"Add to wishlist\" button instead of floating over the corner."
@@ -3692,6 +3709,13 @@ $("#headerAvatar").addEventListener("click", () => {
   openPicker("Account", [["signin", "Sign in", ICONS.login], ["signup", "Create account", ICONS.userPlus]], null, v => {
     authMode = v; openAccount();
   });
+});
+// Desktop sidebar only -- makes the whole account row clickable like every other sidebar row,
+// not just the small avatar circle. Skips the forward when the click already landed on headerAvatar
+// itself, which has its own listener above and would otherwise fire this twice.
+$("#sideAcctRow").addEventListener("click", e => {
+  if (e.target.closest("#headerAvatar")) return;
+  $("#headerAvatar").click();
 });
 
 /* ---------- Pull to sync ---------- */
