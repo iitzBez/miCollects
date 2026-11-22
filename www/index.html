@@ -32,13 +32,13 @@ if (location.hostname === "micollects.pages.dev") {
 <meta property="og:title" content="miCollects">
 <meta property="og:description" content="Catalogue your collections, track what you're chasing with real prices, and pick items straight off a photo with image recognition -- synced across every device you sign into.">
 <meta property="og:url" content="https://micollects.co.za">
-<meta property="og:image" content="https://micollects.co.za/icons/icon-512.png">
-<meta property="og:image:width" content="512">
-<meta property="og:image:height" content="512">
+<meta property="og:image" content="https://micollects.co.za/favicon.png">
+<meta property="og:image:width" content="1024">
+<meta property="og:image:height" content="1024">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="miCollects">
 <meta name="twitter:description" content="Catalogue your collections, track what you're chasing with real prices, and pick items straight off a photo with image recognition -- synced across every device you sign into.">
-<meta name="twitter:image" content="https://micollects.co.za/icons/icon-512.png">
+<meta name="twitter:image" content="https://micollects.co.za/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -471,6 +471,17 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
    stay display:none until a #sidebar-scoped rule below turns them back on. */
 #sidebar{display:none}
 #welcomeScrim,#welcomeCloseBtn{display:none}
+/* The X that returns to the home page -- shown at any width whenever #welcome was reached from it
+   (body.welcome-from-home, set by openWelcomeFromHome), not just inside the desktop popup card:
+   .welcome is position:fixed in both the full-screen (mobile/narrow) and popup (desktop) cases, so
+   this same absolute position anchors correctly to whichever box it currently is. Never shown for a
+   forced sign-out's full-screen #welcome (that path never sets this class), which still has no way
+   to dismiss back to the home page, on purpose. */
+body.welcome-from-home #welcomeCloseBtn{display:grid;position:absolute;
+  top:max(14px,env(safe-area-inset-top,0px));right:max(14px,env(safe-area-inset-right,0px));
+  width:34px;height:34px;border-radius:50%;place-items:center;cursor:pointer;
+  background:transparent;border:0;color:var(--muted)}
+body.welcome-from-home #welcomeCloseBtn:hover{background:var(--sunk)}
 /* Public home page -- shown instead of the full-screen #welcome splash before anyone is signed in,
    on any browser tab (desktop or mobile Chrome/Safari/etc.), but never inside the installed "Add to
    Home Screen" shortcut, which goes straight to the full-screen login as it always has (see
@@ -723,9 +734,6 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
      against whichever button happened to be last. Back into the flex column's own flow instead, so
      it gets the same gap as everything else above it. */
   body.welcome-popup .welcome-version{position:static;transform:none;margin-top:4px}
-  body.welcome-popup #welcomeCloseBtn{display:grid;position:absolute;top:14px;right:14px;width:34px;height:34px;
-    border-radius:50%;place-items:center;cursor:pointer;background:transparent;border:0;color:var(--muted)}
-  body.welcome-popup #welcomeCloseBtn:hover{background:var(--sunk)}
 }
 </style>
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-app-compat.js"></script>
@@ -1241,9 +1249,13 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.51";
+const APP_VERSION = "1.6.52";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.52", date: "22 Nov 2026", items: [
+    ["The link-preview image now uses the actual favicon artwork directly, for a crisper logo in shared links."],
+    ["On mobile, the home page's Login/Create account now has a close (X) button, and the back button returns to it instead of leaving the site entirely.", ["mobile"]]
+  ] },
   { version: "1.6.51", date: "22 Nov 2026", items: [
     ["Sharing the micollects.co.za link (WhatsApp, etc.) now shows a logo and description in the preview card, instead of nothing."]
   ] },
@@ -1836,6 +1848,10 @@ $("#imgLightbox").addEventListener("click", e => { if (e.target === e.currentTar
 
 addEventListener("popstate", () => {
   if (suppressNextPopstate) { suppressNextPopstate = false; return; }
+  // The welcome-from-home popup/full-screen login never overlaps any of the signed-in-only UI
+  // below (sheet, picker, lightbox, select mode) -- it's only ever open while signed out -- so it
+  // doesn't need to fit into their topmost-first ordering, just needs to be checked somewhere.
+  if (document.body.classList.contains("welcome-from-home")) { hideWelcomePopup(); return; }
   // Checked in open-on-top-of order: the lightbox can open from a card inside the item-edit sheet,
   // which itself can be open over an active select-mode session -- back must peel off the topmost
   // one first.
@@ -3386,15 +3402,24 @@ function maybeShowWelcome(force) {
 function openWelcomeFromHome() {
   // The centered-popup-over-a-blurred-page treatment only exists/looks right at desktop widths
   // (see the @media(min-width:1300px) rules for body.welcome-popup); everywhere else this just
-  // shows the plain full-screen login, same as a mobile browser tab always has.
+  // shows the plain full-screen login, same as a mobile browser tab always has. welcome-from-home
+  // is set either way, though -- it's what shows the close (X) button at any width, and the
+  // pushState below is the same history-entry trick every other sheet/picker/lightbox in this app
+  // uses, so the hardware/gesture back button returns to the home page instead of leaving the site.
   if (desktopQuery.matches) document.body.classList.add("welcome-popup");
+  document.body.classList.add("welcome-from-home");
+  try { history.pushState({ welcomeFromHome: 1 }, ""); } catch (e) {}
   showWelcome();
 }
-function closeWelcomePopup() {
-  document.body.classList.remove("welcome-popup");
+function hideWelcomePopup() {
+  document.body.classList.remove("welcome-popup", "welcome-from-home");
   const w = document.getElementById("welcome");
   if (w) w.hidden = true;
   showSiteHome();
+}
+function closeWelcomePopup() {
+  hideWelcomePopup();
+  try { if (history.state && history.state.welcomeFromHome) { suppressNextPopstate = true; history.back(); } } catch (e) {}
 }
 document.addEventListener("keydown", e => {
   if (e.key === "Escape" && document.body.classList.contains("welcome-popup")) closeWelcomePopup();
@@ -4590,7 +4615,12 @@ function showWelcome() {
 function finishWelcome() {
   settings.onboarded = true; saveSettings();
   $("#welcome").hidden = true;
-  document.body.classList.remove("welcome-popup");
+  // Successfully signing in/up isn't a back-navigation -- if openWelcomeFromHome() pushed a history
+  // entry for this, replace its state (not history.back(), which would actually navigate) so a
+  // later, genuine back-button press doesn't land on a stale welcomeFromHome entry and re-show the
+  // home page to someone who's now signed in.
+  if (document.body.classList.contains("welcome-from-home")) { try { history.replaceState(null, ""); } catch (e) {} }
+  document.body.classList.remove("welcome-popup", "welcome-from-home");
   hideSiteHome();
 }
 $("#wSignIn").addEventListener("click", () => openWelcomeForm("signin"));
