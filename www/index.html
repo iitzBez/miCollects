@@ -1177,7 +1177,7 @@ const APP_VERSION = "1.6.42";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
   { version: "1.6.42", date: "22 Nov 2026", items: [
-    ["A new home page introduces miCollects before you sign in, with Login and Create account taking you straight to the sign-in screen.", ["desktop"]]
+    ["A new home page introduces miCollects before you sign in, with Login and Create account taking you straight to the sign-in screen -- and signing out brings you back to it.", ["desktop"]]
   ] },
   { version: "1.6.41", date: "22 Nov 2026", items: [
     "The \"Add photos\" box on an item now starts small and only grows to its full size once there's actually a photo in it, instead of always taking up a big chunk of the screen while empty.",
@@ -1778,7 +1778,7 @@ addEventListener("keydown", e => {
      would reset the clock on the very same unlock event that's supposed to be checking it. */
   P.App.addListener("appStateChange", ({ isActive }) => {
     if (!isActive) { markActive(); return; }
-    if (markActiveAndCheckTimeout() && cloudUser) { forceWelcomeNext = true; fbAuth.signOut().catch(() => {}); }
+    if (markActiveAndCheckTimeout() && cloudUser) { forceWelcomeNext = true; forceFullScreenWelcome = true; fbAuth.signOut().catch(() => {}); }
   });
 })();
 
@@ -2922,6 +2922,11 @@ let cloudSettingsReady = false;
 let fbAuth = null, fbDb = null, fbStorage = null;
 // pendingInactivitySignOut is computed up top (see its definition for why); consumed in onAuthStateChanged below.
 let forceWelcomeNext = false;
+// Set only by an inactivity-timeout sign-out (never an explicit "Sign out" click) -- that one case
+// always goes straight to the full-screen login, on any width, instead of the desktop home page;
+// see maybeShowWelcome. An explicit sign-out still sets forceWelcomeNext (to bypass the welcomeShown
+// cache below) but leaves this false, so it lands back on the home page on desktop as normal.
+let forceFullScreenWelcome = false;
 if (cloudEnabled) {
   firebase.initializeApp(firebaseConfig);
   fbAuth = firebase.auth(); fbDb = firebase.firestore(); fbStorage = firebase.storage();
@@ -3266,9 +3271,14 @@ function maybeShowWelcome(force) {
   const needsWelcome = cloudEnabled ? !cloudUser : !settings.onboarded;
   if (force || needsWelcome) {
     welcomeShown = true;
-    // A forced sign-out (inactivity timeout, explicit "Sign out") always goes straight to the
-    // full-screen login on any screen width, never the home page -- even if a popup was open.
-    if (force) { document.body.classList.remove("welcome-popup"); hideSiteHome(); showWelcome(); return; }
+    // An inactivity-timeout sign-out always goes straight to the full-screen login on any screen
+    // width, never the home page -- even if a popup was open. An explicit "Sign out" click also
+    // passes force=true (to bypass the welcomeShown cache above) but leaves forceFullScreenWelcome
+    // false, so it falls through to the desktop-home-page branch below like any other sign-out.
+    if (forceFullScreenWelcome) {
+      forceFullScreenWelcome = false;
+      document.body.classList.remove("welcome-popup"); hideSiteHome(); showWelcome(); return;
+    }
     if (desktopQuery.matches) { showSiteHome(); return; }
     showWelcome();
   }
@@ -3295,6 +3305,7 @@ if (cloudEnabled) {
     if (user && pendingInactivitySignOut) {
       pendingInactivitySignOut = false;
       forceWelcomeNext = true;
+      forceFullScreenWelcome = true;
       try { await fbAuth.signOut(); } catch (e) {}
       return; // the resulting null-user call below finishes the job
     }
