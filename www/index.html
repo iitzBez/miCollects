@@ -452,6 +452,7 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
    there has no mobile equivalent; "Summary"/"Settings" need to go from icon-only to icon+text) -- both
    stay display:none until a #sidebar-scoped rule below turns them back on. */
 #sidebar{display:none}
+#siteHome,#welcomeScrim,#welcomeCloseBtn{display:none}
 .side-icon,.side-label,.sheet-x,#selectCancelBtn{display:none}
 #mainArea{margin-left:0}
 @media (min-width:1300px){
@@ -622,6 +623,57 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
      everything past that point (the action bar, Select all, bulk update, share, delete) is the exact
      same .select-bar this reuses unchanged, not a new rebuilt one. */
   .card:hover .sel-dot{opacity:1}
+
+  /* Public home page -- desktop only. Shown instead of the full-screen #welcome splash before
+     anyone is signed in (see hideWelcomeIfOnboarded/maybeShowWelcome); mobile never sees this at
+     all and goes straight to #welcome as before. Its Login/Create account buttons open #welcome
+     as a centered popup over a blurred copy of this page (see body.welcome-popup below), reusing
+     the existing sign-in/sign-up form logic completely unchanged. */
+  #siteHome:not([hidden]){display:block;position:fixed;inset:0;z-index:25;background:var(--bg);overflow-y:auto}
+  .site-header{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;
+    padding-top:18px;padding-bottom:18px;padding-left:max(24px,env(safe-area-inset-left,0px));
+    padding-right:max(24px,env(safe-area-inset-right,0px));background:var(--bg);border-bottom:1px solid var(--line)}
+  .site-header .brand{margin:0}
+  .site-hero{max-width:min(94vw,1920px);margin:0 auto;padding:64px 24px 40px;display:grid;
+    grid-template-columns:1.1fr 1fr;gap:48px;align-items:center}
+  .site-eyebrow{font:700 13px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--brass);margin:0 0 14px}
+  .site-hero h1{font:800 clamp(32px,4vw,56px)/1.08 var(--display);letter-spacing:-.02em;color:var(--ink);margin:0 0 18px}
+  .site-hero p{font:500 17px/1.6 var(--body);color:var(--muted);max-width:480px;margin:0 0 28px}
+  .site-ctas{display:flex;gap:12px;flex-wrap:wrap}
+  .site-ctas .btn{width:auto;flex:none;padding:0 24px}
+  .site-grid-preview{position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:18px;padding:12px}
+  .gp-card{aspect-ratio:1;border-radius:20px;background:var(--surface);border:1px solid var(--line);
+    display:grid;place-items:center;box-shadow:0 10px 30px rgba(15,23,42,.08);animation:gpFloat 6s ease-in-out infinite}
+  .gp-card svg{width:42%;height:42%}
+  .gp-card:nth-child(2){animation-delay:.4s}
+  .gp-card:nth-child(3){animation-delay:.8s}
+  .gp-card:nth-child(4){animation-delay:1.2s}
+  .gp-card:nth-child(5){animation-delay:1.6s}
+  .gp-card:nth-child(6){animation-delay:2s}
+  @keyframes gpFloat{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-6%) rotate(-3deg)}}
+  @media (prefers-reduced-motion:reduce){.gp-card{animation:none}}
+  .site-features{max-width:min(94vw,1920px);margin:0 auto;padding:40px 24px 64px;
+    display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  @media (min-width:1700px){.site-features{grid-template-columns:repeat(6,1fr)}}
+  .site-feature{padding:22px;border-radius:16px;background:var(--sunk)}
+  .site-feature h3{font:700 16px/1.3 var(--display);margin:0 0 6px;color:var(--ink)}
+  .site-feature p{font:500 14px/1.5 var(--body);color:var(--muted);margin:0}
+  .site-footer{border-top:1px solid var(--line);text-align:center;font:500 13px/1.5 var(--body);color:var(--muted);
+    padding-top:24px;padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));
+    padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}
+
+  /* #welcome, reopened as a centered popup over the (blurred) home page -- same markup and
+     sign-in/sign-up logic as the full-screen version, just restyled while body.welcome-popup is
+     set (see openWelcomeFromHome/closeWelcomePopup near maybeShowWelcome). */
+  body.welcome-popup #siteHome{filter:blur(6px);pointer-events:none;user-select:none}
+  #welcomeScrim{display:none;position:fixed;inset:0;z-index:29;background:rgba(10,14,20,.45);backdrop-filter:blur(6px)}
+  body.welcome-popup #welcomeScrim{display:block}
+  body.welcome-popup .welcome{inset:auto;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:min(420px,calc(100vw - 32px));max-height:85vh;overflow-y:auto;background:var(--surface);
+    border-radius:20px;box-shadow:0 24px 64px rgba(15,23,42,.35);padding:40px 28px 32px}
+  body.welcome-popup #welcomeCloseBtn{display:grid;position:absolute;top:14px;right:14px;width:34px;height:34px;
+    border-radius:50%;place-items:center;cursor:pointer;background:transparent;border:0;color:var(--muted)}
+  body.welcome-popup #welcomeCloseBtn:hover{background:var(--sunk)}
 }
 </style>
 <script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-app-compat.js"></script>
@@ -634,7 +686,50 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
 
 <svg class="ptr-indicator" id="ptrIndicator" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
 
+<!-- Public home page (desktop only, see #siteHome CSS) -- gives context before anyone signs in,
+     with its own Login/Create account buttons opening #welcome as a popup (openWelcomeFromHome).
+     Mobile never shows this; hideWelcomeIfOnboarded/maybeShowWelcome keep it that way. -->
+<div id="siteHome" hidden>
+  <header class="site-header">
+    <p class="brand">mi<span>Collects</span></p>
+    <button type="button" class="btn ghost" onclick="openWelcomeFromHome()">Login</button>
+  </header>
+  <section class="site-hero">
+    <div>
+      <p class="site-eyebrow">Collection &amp; wishlist tracking</p>
+      <h1>Every piece you own.<br>Everything you're after.</h1>
+      <p>Catalogue your collections, track what you're chasing with real prices, and pick items
+         straight off a photo with image recognition -- synced across every device you sign into.</p>
+      <div class="site-ctas">
+        <button type="button" class="btn primary" onclick="openWelcomeFromHome()">Create a free account</button>
+        <button type="button" class="btn ghost" onclick="openWelcomeFromHome()">Login</button>
+      </div>
+    </div>
+    <div class="site-grid-preview" aria-hidden="true">
+      <div class="gp-card"><svg viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm14 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM5 17l1.5-6.5A2 2 0 0 1 8.4 9h7.2a2 2 0 0 1 1.9 1.5L19 17M5 13h14"/></svg></div>
+      <div class="gp-card"><svg viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="14" r="7"/><path d="M9 7l3-4 3 4"/></svg></div>
+      <div class="gp-card"><svg viewBox="0 0 24 24" fill="none" stroke="#9333EA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M9 12v2M15 12v2"/></svg></div>
+      <div class="gp-card"><svg viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></div>
+      <div class="gp-card"><svg viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="9" r="3"/><path d="M8 17h8"/></svg></div>
+      <div class="gp-card"><svg viewBox="0 0 24 24" fill="none" stroke="#2DD4BF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/></svg></div>
+    </div>
+  </section>
+  <section class="site-features">
+    <div class="site-feature"><h3>Collection tracking</h3><p>Log every item with photos, categories and notes, organised the way you actually think about them.</p></div>
+    <div class="site-feature"><h3>Wishlist with real prices</h3><p>Track what you're after alongside live prices, so you know when it's worth buying.</p></div>
+    <div class="site-feature"><h3>Image recognition</h3><p>Point a photo at an item and let miCollects fill in the details for you.</p></div>
+    <div class="site-feature"><h3>Synced everywhere</h3><p>Sign in and your collection follows you -- phone, tablet or desktop, always up to date.</p></div>
+    <div class="site-feature"><h3>Summaries</h3><p>See totals, values and breakdowns across your whole collection or wishlist at a glance.</p></div>
+    <div class="site-feature"><h3>Share</h3><p>Export or share a clean summary of your collection whenever you want to show it off.</p></div>
+  </section>
+  <footer class="site-footer">miCollects -- a home for everything you collect.</footer>
+</div>
+
+<div id="welcomeScrim" onclick="closeWelcomePopup()"></div>
 <div class="welcome" id="welcome">
+  <button type="button" id="welcomeCloseBtn" aria-label="Close" onclick="closeWelcomePopup()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+  </button>
   <p class="welcome-logo">mi<span>Collects</span></p>
   <div class="welcome-choices" id="welcomeChoices" hidden>
     <button type="button" class="btn primary" id="wSignIn">Sign in</button>
@@ -951,9 +1046,27 @@ function hideWelcomeIfOnboarded() {
   // including once synchronously before cloudUser is even known -- cloudUser is still null/undefined
   // at that point, so this correctly leaves #welcome alone rather than hiding it on a stale
   // settings.onboarded that says nothing about whether this load is actually signed in).
-  if (cloudEnabled ? !cloudUser : !settings.onboarded) return;
+  if (cloudEnabled ? !cloudUser : !settings.onboarded) {
+    // Not known to be signed in (yet, or genuinely signed out) -- on desktop, show the public
+    // home page instead of the full-screen login. Uses matchMedia directly, not the shared
+    // desktopQuery, because this runs synchronously before desktopQuery exists further down.
+    if (matchMedia("(min-width:1300px)").matches) showSiteHome();
+    return;
+  }
   const w = document.getElementById("welcome");
   if (w) w.hidden = true;
+  document.body.classList.remove("welcome-popup");
+  hideSiteHome();
+}
+function showSiteHome() {
+  const home = document.getElementById("siteHome");
+  if (home) home.hidden = false;
+  const w = document.getElementById("welcome");
+  if (w) w.hidden = true;
+}
+function hideSiteHome() {
+  const home = document.getElementById("siteHome");
+  if (home) home.hidden = true;
 }
 if (!pendingInactivitySignOut) hideWelcomeIfOnboarded();
 function saveSettings() { try { localStorage.setItem("cabinet-settings", JSON.stringify(settings)); } catch (e) {} }
@@ -1060,9 +1173,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.41";
+const APP_VERSION = "1.6.42";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.42", date: "22 Nov 2026", items: [
+    ["A new home page introduces miCollects before you sign in, with Login and Create account taking you straight to the sign-in screen.", ["desktop"]]
+  ] },
   { version: "1.6.41", date: "22 Nov 2026", items: [
     "The \"Add photos\" box on an item now starts small and only grows to its full size once there's actually a photo in it, instead of always taking up a big chunk of the screen while empty.",
     "Tapping a photo (the main one or any thumbnail) now opens a full-size preview, with Set as main and Remove right there -- instead of tapping a thumbnail instantly swapping it to main with no way to just look at it first."
@@ -3148,8 +3264,32 @@ function maybeShowWelcome(force) {
   // sync is actually configured, show it unless there's a real signed-in user right now; only fall
   // back to the old onboarded-once check for a build with no accounts to sign into at all.
   const needsWelcome = cloudEnabled ? !cloudUser : !settings.onboarded;
-  if (force || needsWelcome) { welcomeShown = true; showWelcome(); }
+  if (force || needsWelcome) {
+    welcomeShown = true;
+    // A forced sign-out (inactivity timeout, explicit "Sign out") always goes straight to the
+    // full-screen login on any screen width, never the home page -- even if a popup was open.
+    if (force) { document.body.classList.remove("welcome-popup"); hideSiteHome(); showWelcome(); return; }
+    if (desktopQuery.matches) { showSiteHome(); return; }
+    showWelcome();
+  }
 }
+/* Opened from #siteHome's Login/Create account buttons -- reuses showWelcome()/the sign-in and
+   sign-up form logic completely unchanged, just restyled into a centered popup over the (blurred)
+   home page while body.welcome-popup is set. closeWelcomePopup() is the reverse: back to the home
+   page, no sign-in state lost since nothing here touches the form itself. */
+function openWelcomeFromHome() {
+  document.body.classList.add("welcome-popup");
+  showWelcome();
+}
+function closeWelcomePopup() {
+  document.body.classList.remove("welcome-popup");
+  const w = document.getElementById("welcome");
+  if (w) w.hidden = true;
+  showSiteHome();
+}
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && document.body.classList.contains("welcome-popup")) closeWelcomePopup();
+});
 if (cloudEnabled) {
   fbAuth.onAuthStateChanged(async user => {
     if (user && pendingInactivitySignOut) {
@@ -4337,7 +4477,12 @@ function showWelcome() {
   $("#wfHint").textContent = "";
   setTimeout(() => { $("#welcomeChoices").hidden = false; }, 1000);
 }
-function finishWelcome() { settings.onboarded = true; saveSettings(); $("#welcome").hidden = true; }
+function finishWelcome() {
+  settings.onboarded = true; saveSettings();
+  $("#welcome").hidden = true;
+  document.body.classList.remove("welcome-popup");
+  hideSiteHome();
+}
 $("#wSignIn").addEventListener("click", () => openWelcomeForm("signin"));
 $("#wSignUp").addEventListener("click", () => openWelcomeForm("signup"));
 $("#wfBack").addEventListener("click", () => {
@@ -4405,6 +4550,15 @@ function relocateSearchForViewport() {
 const desktopQuery = matchMedia("(min-width:1300px)");
 desktopQuery.addEventListener("change", relocateSearchForViewport);
 relocateSearchForViewport();
+// Resizing across the desktop breakpoint while signed out should swap #siteHome/#welcome to match,
+// same as every other piece of UI that relocates on this breakpoint -- a forced sign-out's own
+// full-screen #welcome is a one-off (maybeShowWelcome(true)), not a state this needs to track.
+desktopQuery.addEventListener("change", () => {
+  if (!appReady) return;
+  if (cloudEnabled ? cloudUser : settings.onboarded) return;
+  document.body.classList.remove("welcome-popup");
+  if (desktopQuery.matches) showSiteHome(); else showWelcome();
+});
 
 /* Same physical-DOM-move trick as the search bar, generalized to every piece that moves into the
    desktop sidebar -- the brand wordmark, the Collection/Wishlist tab buttons (with their counts),
