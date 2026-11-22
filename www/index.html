@@ -662,6 +662,10 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
   .site-footer{margin-top:auto;border-top:1px solid var(--line);text-align:center;font:500 13px/1.5 var(--body);color:var(--muted);
     padding-top:24px;padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));
     padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}
+  .site-footer p{margin:0}
+  .site-footer .footer-mark{display:flex;align-items:flex-end;justify-content:center;gap:3px;
+    font:800 22px/1 var(--display);letter-spacing:-.02em;color:var(--ink);margin-bottom:16px}
+  .footer-dot{width:7px;height:7px;border-radius:50%;background:var(--brass);margin-bottom:3px}
 
   /* #welcome, reopened as a centered popup over the (blurred) home page -- same markup and
      sign-in/sign-up logic as the full-screen version, just restyled while body.welcome-popup is
@@ -723,7 +727,10 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
     <div class="site-feature"><h3>Summaries</h3><p>See totals, values and breakdowns across your whole collection or wishlist at a glance.</p></div>
     <div class="site-feature"><h3>Share</h3><p>Export or share a clean summary of your collection whenever you want to show it off.</p></div>
   </section>
-  <footer class="site-footer">miCollects -- a home for everything you collect.</footer>
+  <footer class="site-footer">
+    <p class="footer-mark" aria-hidden="true">mi<span class="footer-dot"></span></p>
+    <p>miCollects -- a home for everything you collect.</p>
+  </footer>
 </div>
 
 <div id="welcomeScrim" onclick="closeWelcomePopup()"></div>
@@ -1180,9 +1187,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.44";
+const APP_VERSION = "1.6.45";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.45", date: "22 Nov 2026", items: [
+    ["Added the mi. mark to the home page's footer.", ["desktop"]]
+  ] },
   { version: "1.6.44", date: "22 Nov 2026", items: [
     ["The home page's logo was too small and its footer no longer sat at the bottom of the page -- both fixed.", ["desktop"]]
   ] },
