@@ -638,7 +638,7 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
   .site-hero{max-width:min(94vw,1920px);margin:0 auto;padding:64px 24px 40px;display:grid;
     grid-template-columns:1.1fr 1fr;gap:48px;align-items:center}
   .site-eyebrow{font:700 13px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--brass);margin:0 0 14px}
-  .site-hero h1{font:800 clamp(32px,4vw,56px)/1.08 var(--display);letter-spacing:-.02em;color:var(--ink);margin:0 0 18px}
+  .site-hero h1{font:800 clamp(32px,4vw,56px)/1.25 var(--display);letter-spacing:-.02em;color:var(--ink);margin:0 0 18px}
   .site-hero p{font:500 17px/1.6 var(--body);color:var(--muted);max-width:480px;margin:0 0 28px}
   .site-ctas{display:flex;gap:12px;flex-wrap:wrap}
   .site-ctas .btn{width:auto;flex:none;padding:0 24px}
@@ -1192,9 +1192,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.48";
+const APP_VERSION = "1.6.49";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.49", date: "22 Nov 2026", items: [
+    ["Fixed the home page's headline clipping the descenders of letters like y and g against the text below it."]
+  ] },
   { version: "1.6.48", date: "22 Nov 2026", items: [
     ["The home page follows your light/dark theme again, instead of always using the dark look."]
   ] },
