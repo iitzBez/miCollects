@@ -494,14 +494,25 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
     font-size:11px;padding:1px 7px;border-radius:9px}
   #sideNav .tab-btn[aria-selected="true"] .count{background:var(--bg)}
   /* The relocated #summaryBtn (see the "moves" array) just isn't shown in the sidebar any more --
-     #sideSummaryLabel/#sideCollSummaryBtn/#sideWishSummaryBtn (static children of #sideNav, so they
-     land before the relocated items in the DOM) take its place instead. order:1 puts them visually
-     after those relocated items (which keep the default order:0) regardless of that DOM position. */
+     #sideSummaryGroup (a static child of #sideNav, so it lands before the relocated items in the
+     DOM) takes its place instead. order:1 puts it visually after those relocated items (which keep
+     the default order:0) regardless of that DOM position. */
   #sideNav #summaryBtn{display:none}
-  #sideSummaryLabel,#sideCollSummaryBtn,#sideWishSummaryBtn{order:1}
-  #sideSummaryLabel{display:flex;align-items:center;gap:12px;padding:14px 12px 2px;color:var(--muted);font:650 14px/1 var(--body)}
+  #sideSummaryGroup{order:1;position:relative}
+  #sideSummaryLabel{display:flex;align-items:center;gap:12px;padding:14px 12px;color:var(--muted);font:650 14px/1 var(--body);border-radius:10px;cursor:default}
   #sideSummaryLabel svg{width:18px;height:18px;flex:none}
-  #sideNav .tab-btn.sub{padding:9px 12px 9px 42px;font-size:13px}
+  #sideSummaryLabel .side-summary-chevron{width:14px;height:14px;margin-left:auto;transition:transform .15s ease}
+  #sideSummaryGroup:hover #sideSummaryLabel{background:var(--sunk);color:var(--ink)}
+  #sideSummaryGroup:hover .side-summary-chevron{transform:rotate(180deg)}
+  /* Collection/Wishlist stay out of the layout (and out of the tab order) until hovered, rather than
+     sitting there as two more permanently-visible rows -- see the note above #sideSummaryGroup in the
+     markup. An absolutely positioned overlay, not a height/max-height reveal, so it never pushes
+     #sideBottom down while open. */
+  .side-summary-dropdown{display:none;position:absolute;left:0;right:0;top:100%;z-index:5;
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 28px rgba(15,23,42,.14);
+    padding:4px;margin-top:2px}
+  #sideSummaryGroup:hover .side-summary-dropdown{display:flex;flex-direction:column}
+  #sideNav .tab-btn.sub{padding:9px 12px;font-size:13px}
 
   #sideBottom{margin-top:auto;display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--line);padding-top:12px}
   #sideSettingsSlot #settingsBtn{
@@ -641,15 +652,22 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
   <div id="sideUtilRow"></div>
   <nav id="sideNav" aria-label="Primary">
     <!-- Desktop only (see #sideNav #summaryBtn{display:none} and the surrounding comment) -- the
-         relocated #summaryBtn row itself is hidden here and replaced by this label plus two real
-         sub-items, since desktop has room to show the Collection/Wishlist choice directly instead
-         of behind a click like the mobile picker (openSummaryPicker) needs to. -->
-    <div class="side-summary-label" id="sideSummaryLabel">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
-      <span>Summary</span>
+         relocated #summaryBtn row itself is hidden here and replaced by this hover group instead,
+         since desktop has room to show the Collection/Wishlist choice directly instead of behind a
+         click like the mobile picker (openSummaryPicker) needs to. Collection/Wishlist reveal on
+         hovering #sideSummaryLabel (pure CSS -- see .side-summary-group:hover below), rather than
+         sitting there as two more permanently-visible rows. -->
+    <div class="side-summary-group" id="sideSummaryGroup">
+      <div class="side-summary-label" id="sideSummaryLabel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+        <span>Summary</span>
+        <svg class="side-summary-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </div>
+      <div class="side-summary-dropdown">
+        <button type="button" class="tab-btn sub" id="sideCollSummaryBtn">Collection</button>
+        <button type="button" class="tab-btn sub" id="sideWishSummaryBtn">Wishlist</button>
+      </div>
     </div>
-    <button type="button" class="tab-btn sub" id="sideCollSummaryBtn">Collection</button>
-    <button type="button" class="tab-btn sub" id="sideWishSummaryBtn">Wishlist</button>
   </nav>
   <div id="sideBottom">
     <div id="sideSettingsSlot"></div>
@@ -1008,9 +1026,14 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.39";
+const APP_VERSION = "1.6.40";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.40", date: "22 Nov 2026", items: [
+    "Fixed changing the app theme not actually syncing to the cloud, so the next page refresh could quietly revert it back to whatever another signed-in device last had.",
+    ["PDF/CSV exports (Summary, items) now always save to the device first, instead of only offering the share panel and never actually saving.", ["mobile"]],
+    ["In the sidebar, Summary's Collection/Wishlist now appear as a dropdown on hovering Summary, instead of two always-visible rows underneath it.", ["desktop"]]
+  ] },
   { version: "1.6.39", date: "22 Nov 2026", items: [
     ["Image Recognition's \"Add a photo\" now explicitly asks Take a photo or Choose from gallery on mobile web (same as the app always did), instead of relying on the phone browser's own file picker to offer a camera option on its own.", ["mobile"]]
   ] },
@@ -3469,14 +3492,22 @@ async function shareOrDownload(name, blob, mimeType, shareTitle) {
       return;
     } catch (e) { if (e && e.name === "AbortError") return; }
   }
-  try {
-    const file = new File([blob], name, { type: mimeType });
-    if (!desktopQuery.matches && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: shareTitle }); return; }
-  } catch (e) { if (e && e.name === "AbortError") return; }
+  // Mobile web (or a desktop browser without showSaveFilePicker support): download it outright first,
+  // so it's actually saved to the device regardless of what the user does next -- treating
+  // navigator.share as an alternative to saving (the previous behavior here) meant that on a browser
+  // where canShare() returns true, nothing ever actually got saved, only the share sheet appeared.
+  // Same sequencing the native Capacitor path above already uses: save, then separately (and only
+  // best-effort -- a cancelled/unsupported share here must never look like the save itself failed)
+  // offer to forward it on somewhere too.
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(`Saved ${name}`);
+  try {
+    const file = new File([blob], name, { type: mimeType });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: shareTitle });
+  } catch (e) {}
 }
 
 const csvCell = v => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
@@ -3831,7 +3862,10 @@ function openSettings() {
       settings.currency = v; saveSettings(); render(); cloudPushSettings(); openSettings();
     }));
     $("#s-theme").addEventListener("click", () => openPicker("Theme", THEME_OPTIONS, settings.theme, v => {
-      settings.theme = v; saveSettings(); applyTheme(); openSettings();
+      // Unlike every other setting here, this was missing cloudPushSettings() -- a theme change
+      // saved locally but never reached the cloud, so the next pull (e.g. after a page refresh)
+      // re-synced this device back to whatever theme was last pushed from elsewhere, undoing it.
+      settings.theme = v; saveSettings(); applyTheme(); cloudPushSettings(); openSettings();
     }));
     $("#expBtn").addEventListener("click", exportBackup);
     $("#impIn").addEventListener("change", importBackup);
