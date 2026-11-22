@@ -334,9 +334,13 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
 .tel-row input{flex:1;min-width:0;min-height:48px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px 12px;font-size:16px;font-family:inherit}
 .url-box .hint a{color:var(--brass);font-weight:600}
 .btn[disabled]{opacity:.6;cursor:progress}
-.photo-main{aspect-ratio:16/10;border-radius:14px;background:var(--sunk);overflow:hidden;display:grid}
-.photo-main img{width:100%;height:100%;object-fit:contain;display:block}
-.photo-empty{display:grid;place-items:center;border:2px dashed var(--line);border-radius:14px;color:var(--muted);font-weight:600;cursor:pointer;margin-bottom:14px}
+/* No photo yet -- a compact bar, not the same big box a real photo gets, so an empty item form
+   doesn't open with a large empty rectangle dominating the screen. .has-photo (toggled in
+   paintPhotos()) switches it back to the full 16:10 box once there's something to actually show. */
+.photo-main{height:110px;border-radius:14px;background:var(--sunk);overflow:hidden;display:grid}
+.photo-main.has-photo{height:auto;aspect-ratio:16/10}
+.photo-main img{width:100%;height:100%;object-fit:contain;display:block;cursor:zoom-in}
+.photo-empty{display:grid;place-items:center;border:2px dashed var(--line);border-radius:14px;color:var(--muted);font-weight:600;cursor:pointer;height:100%}
 .thumbs{display:flex;gap:8px;overflow-x:auto;padding:8px 0 14px}
 .thumb{flex:none;width:64px;height:64px;border-radius:10px;overflow:hidden;position:relative;border:2px solid transparent;background:var(--sunk)}
 .thumb.main{border-color:var(--brass)}
@@ -392,6 +396,22 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
 .stab[aria-selected="true"]{color:var(--brass);border-bottom-color:var(--brass)}
 
 .toast{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;font-weight:600;z-index:30;max-width:calc(100% - 32px);text-align:center}
+
+/* True fullscreen, edge-to-edge -- the image itself fills the whole viewport (object-fit:contain
+   still letterboxes rather than cropping), with the close button and actions floating on top of it
+   instead of sharing space in a smaller centered box. */
+.img-lightbox{position:fixed;inset:0;z-index:20;background:rgba(10,12,18,.97);display:flex}
+.img-lightbox img{width:100%;height:100%;object-fit:contain}
+.lightbox-x{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));right:14px;width:40px;height:40px;border-radius:50%;border:0;background:rgba(255,255,255,.12);color:#fff;display:grid;place-items:center;cursor:pointer}
+.lightbox-x:hover{background:rgba(255,255,255,.2)}
+/* A soft gradient fade behind the buttons, not a hard bar -- so they're always legible over bare
+   photo content without covering the image with a solid strip or shrinking it to make room. */
+.lightbox-actions{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:10px;
+  padding:32px 16px 16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));
+  background:linear-gradient(to top,rgba(10,12,18,.85),rgba(10,12,18,0))}
+.img-lightbox .btn.ghost{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.3);color:#fff}
+.img-lightbox .btn.ghost:hover{background:rgba(255,255,255,.18)}
+.img-lightbox .btn.danger{border-color:rgba(255,255,255,.3)}
 [hidden]{display:none!important}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
@@ -800,6 +820,20 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
   <div id="pickerOptions" role="radiogroup"></div>
 </section>
 
+<!-- Full-size preview for an item's own photos (openImageLightbox/closeImageLightbox) -- tapping the
+     main photo or any thumbnail opens this instead of a browser-default anything, since it's local
+     base64 image data with nowhere else to "open" in a new tab. -->
+<div class="img-lightbox" id="imgLightbox" hidden>
+  <button type="button" class="lightbox-x" id="lightboxCloseBtn" aria-label="Close">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+  </button>
+  <img id="lightboxImg" src="" alt="Photo preview">
+  <div class="lightbox-actions">
+    <button type="button" class="btn ghost" id="lightboxMainBtn">Set as main</button>
+    <button type="button" class="btn danger" id="lightboxRemoveBtn">Remove</button>
+  </div>
+</div>
+
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
@@ -1026,9 +1060,13 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.40";
+const APP_VERSION = "1.6.41";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.41", date: "22 Nov 2026", items: [
+    "The \"Add photos\" box on an item now starts small and only grows to its full size once there's actually a photo in it, instead of always taking up a big chunk of the screen while empty.",
+    "Tapping a photo (the main one or any thumbnail) now opens a full-size preview, with Set as main and Remove right there -- instead of tapping a thumbnail instantly swapping it to main with no way to just look at it first."
+  ] },
   { version: "1.6.40", date: "22 Nov 2026", items: [
     "Fixed changing the app theme not actually syncing to the cloud, so the next page refresh could quietly revert it back to whatever another signed-in device last had.",
     ["PDF/CSV exports (Summary, items) now always save to the device first, instead of only offering the share panel and never actually saving.", ["mobile"]],
@@ -1557,8 +1595,39 @@ function closePicker() {
   try { if (history.state && history.state.picker) { suppressNextPopstate = true; history.back(); } } catch (e) {}
 }
 
+/* Full-size photo preview, opened from either the main photo or a thumbnail (see paintPhotos()'s
+   wiring below) -- onSetMain is omitted for whichever photo is already main (nothing to promote it
+   to), onRemove is always offered. Same pushState/suppressNextPopstate pattern as the sheet/picker
+   above, so the hardware/gesture back button closes just this, not whatever's open underneath it. */
+let lightboxOpen = false;
+function openImageLightbox(src, { onSetMain, onRemove } = {}) {
+  $("#lightboxImg").src = src;
+  const mainBtn = $("#lightboxMainBtn");
+  mainBtn.hidden = !onSetMain;
+  mainBtn.onclick = onSetMain ? () => { closeImageLightbox(); onSetMain(); } : null;
+  $("#lightboxRemoveBtn").onclick = onRemove ? () => { closeImageLightbox(); onRemove(); } : null;
+  $("#imgLightbox").hidden = false;
+  if (!lightboxOpen) { lightboxOpen = true; try { history.pushState({ lightbox: 1 }, ""); } catch (e) {} }
+}
+function hideImageLightbox() {
+  $("#imgLightbox").hidden = true;
+  $("#lightboxImg").src = "";
+  lightboxOpen = false;
+}
+function closeImageLightbox() {
+  if (!lightboxOpen) return;
+  hideImageLightbox();
+  try { if (history.state && history.state.lightbox) { suppressNextPopstate = true; history.back(); } } catch (e) {}
+}
+$("#lightboxCloseBtn").addEventListener("click", closeImageLightbox);
+$("#imgLightbox").addEventListener("click", e => { if (e.target === e.currentTarget) closeImageLightbox(); });
+
 addEventListener("popstate", () => {
   if (suppressNextPopstate) { suppressNextPopstate = false; return; }
+  // Checked in open-on-top-of order: the lightbox can open from a card inside the item-edit sheet,
+  // which itself can be open over an active select-mode session -- back must peel off the topmost
+  // one first.
+  if (lightboxOpen) { hideImageLightbox(); return; }
   if (pickerOpen) { hidePicker(); return; }
   // sheetOpen before selecting: the bulk-update sheet opens on top of an active select-mode
   // session, so it's always the topmost thing when both are open -- back must close it first.
@@ -1571,6 +1640,7 @@ $("#sheetCloseBtn").addEventListener("click", closeSheet);
 $("#pickerCloseBtn").addEventListener("click", closePicker);
 addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
+  if (lightboxOpen) { closeImageLightbox(); return; }
   if (pickerOpen) { closePicker(); return; }
   if (state.selecting) { exitSelectModeAndPop(); return; }
   closeSheet();
@@ -2414,6 +2484,7 @@ function openForm(item, convertTo) {
       <button class="btn danger" id="delBtn">Delete</button></div>` : ""}`;
 
   const paintPhotos = () => {
+    $("#photoMain").classList.toggle("has-photo", !!photos.length);
     $("#photoMain").innerHTML = photos.length
       ? `<img src="${esc(photos[0])}" alt="Main photo">`
       : `<label for="photoIn" class="photo-empty">Add photos</label>`;
@@ -2462,6 +2533,10 @@ function openForm(item, convertTo) {
   }
   $("#photoMain").addEventListener("click", interceptAddPhotoLabel);
   $("#thumbs").addEventListener("click", interceptAddPhotoLabel);
+  $("#photoMain").addEventListener("click", e => {
+    if (!photos.length || e.target.tagName !== "IMG") return;
+    openImageLightbox(photos[0], { onRemove: () => { photos.splice(0, 1); paintPhotos(); } });
+  });
   $("#photoIn").addEventListener("change", async e => {
     const files = [...(e.target.files || [])].slice(0, MAXP - photos.length);
     for (const f of files) { try { photos.push(await compress(f)); } catch (err) { toast(err.message || "Couldn’t read that photo."); } }
@@ -2470,7 +2545,15 @@ function openForm(item, convertTo) {
   $("#thumbs").addEventListener("click", e => {
     const r = e.target.closest("[data-rm]"), m = e.target.closest("[data-main]");
     if (r) { photos.splice(+r.dataset.rm, 1); paintPhotos(); }
-    else if (m) { const [p] = photos.splice(+m.dataset.main, 1); photos.unshift(p); paintPhotos(); }
+    else if (m) {
+      // Opens a full-size preview instead of reordering on tap -- "make this the main photo" moved
+      // into the preview's own button (omitted when this thumbnail already is the main one).
+      const idx = +m.dataset.main;
+      openImageLightbox(photos[idx], {
+        onSetMain: idx === 0 ? null : () => { const [p] = photos.splice(idx, 1); photos.unshift(p); paintPhotos(); },
+        onRemove: () => { photos.splice(idx, 1); paintPhotos(); }
+      });
+    }
   });
   $("#urlBtn").addEventListener("click", () => fillFromUrl(it, paintPhotos, dup));
   $("#f-url").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#urlBtn").click(); } });
