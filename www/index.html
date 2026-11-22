@@ -1249,9 +1249,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.52";
+const APP_VERSION = "1.6.53";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.53", date: "22 Nov 2026", items: [
+    ["Fixed pull-to-sync hijacking scroll gestures on the new home page -- it's only meant for the signed-in Collection/Wishlist screens.", ["mobile"]]
+  ] },
   { version: "1.6.52", date: "22 Nov 2026", items: [
     ["The link-preview image now uses the actual favicon artwork directly, for a crisper logo in shared links."],
     ["On mobile, the home page's Login/Create account now has a close (X) button, and the back button returns to it instead of leaving the site entirely.", ["mobile"]]
@@ -4551,7 +4554,12 @@ function openSignOutConfirm() {
 let ptrStartY = null, ptrActive = false;
 const PTR_THRESHOLD = 70;
 const ptrAtTop = () => (document.scrollingElement || document.documentElement).scrollTop <= 0;
-const ptrBlocked = () => sheetOpen || pickerOpen || state.selecting || !$("#welcome").hidden;
+// !$("#siteHome").hidden matters for more than consistency with #welcome here: #siteHome scrolls
+// internally (position:fixed + its own overflow-y:auto), so the outer document this gesture tracks
+// never actually scrolls while it's showing -- ptrAtTop() below would otherwise read the outer
+// page's permanently-zero scrollTop and report "at the top" everywhere inside it, hijacking every
+// downward swipe (including one meant to scroll back up from partway down the home page) as a pull.
+const ptrBlocked = () => sheetOpen || pickerOpen || state.selecting || !$("#welcome").hidden || !$("#siteHome").hidden;
 /* No hidden-attribute toggling here -- SVGElement doesn't reflect the .hidden IDL property the way
    HTMLElement does (setting it silently no-ops instead of removing the attribute), so it never
    actually hid again once shown. The default opacity:0 + off-screen translateY in the CSS rule
