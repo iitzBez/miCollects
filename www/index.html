@@ -453,19 +453,6 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
    stay display:none until a #sidebar-scoped rule below turns them back on. */
 #sidebar{display:none}
 #siteHome,#welcomeScrim,#welcomeCloseBtn{display:none}
-/* The home page always uses the dark palette, regardless of the signed-in app's own light/dark/
-   system theme setting (there's no one signed in yet to have a preference) -- same values as
-   :root[data-theme="dark"] above, just scoped here so every #siteHome-scoped rule below picks them
-   up via the usual var(--bg) etc. without needing its own light/dark variants. */
-#siteHome{
-  --bg:#0F141C;--surface:#171D27;--sunk:#1F2632;--ink:#F1F5F9;--muted:#94A3B8;--line:#2A3342;
-  --brass:#3B82F6;--brass-ink:#FFFFFF;color-scheme:dark;
-  /* body{color:var(--ink)} resolves against the page's own (possibly light) theme and then just
-     inherits down as a fixed color -- anything in here relying on inherited color instead of its
-     own var(--ink) (the ghost Login button's text, for one) needs this re-declared locally so it
-     re-resolves against the overrides above. */
-  color:var(--ink);
-}
 .side-icon,.side-label,.sheet-x,#selectCancelBtn{display:none}
 #mainArea{margin-left:0}
 @media (min-width:1300px){
@@ -1205,9 +1192,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.47";
+const APP_VERSION = "1.6.48";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.48", date: "22 Nov 2026", items: [
+    ["The home page follows your light/dark theme again, instead of always using the dark look."]
+  ] },
   { version: "1.6.47", date: "22 Nov 2026", items: [
     ["Fixed the home page's Login button being unreadable (dark text on its now-always-dark background) if your own theme was light.", ["desktop"]]
   ] },
