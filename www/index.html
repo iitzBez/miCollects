@@ -1008,9 +1008,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.37";
+const APP_VERSION = "1.6.38";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.38", date: "22 Nov 2026", items: [
+    ["Image Recognition's \"Add a photo\" was quietly losing its Camera option on mobile, falling back to gallery/file browsing only -- allowing more than one photo per selection was the cause, now fixed (photos are still added one at a time there anyway).", ["mobile"]]
+  ] },
   { version: "1.6.37", date: "19 Nov 2026", items: [
     ["Added a Wishlist Summary alongside the existing Collection Summary -- a breakdown of what you're after, its total price to complete, by category/brand, and highest-priced first, with the same PDF/CSV export.", ["desktop", "mobile"]],
     ["In the sidebar, Summary now shows Collection and Wishlist as two separate entries underneath it.", ["desktop"]],
@@ -2286,7 +2289,12 @@ function openForm(item, convertTo) {
     <div class="photo-main" id="photoMain"></div>
     <div class="thumbs" id="thumbs"></div>
     <input type="file" accept="image/*" id="photoIn" multiple hidden>
-    <input type="file" accept="image/*" id="camFileIn" multiple hidden>
+    <!-- No "multiple" here, unlike #photoIn below -- Android Chrome drops the one-tap Camera shortcut
+         from its file-picker sheet (falling back to a gallery/file browser only) once a file input
+         also allows multiple selection, which was quietly removing the camera option for Image
+         Recognition on mobile web. Single-file selection matches how this already behaves anyway
+         (one photo per "Add Another Photo" tap, same as the native Capacitor path). -->
+    <input type="file" accept="image/*" id="camFileIn" hidden>
     <div class="field">
       <label for="f-name">Name</label>
       <input id="f-name" value="${val(it.name)}" autocomplete="off" placeholder="e.g. Charizard Base Set 4/102">
