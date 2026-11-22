@@ -453,6 +453,14 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
    stay display:none until a #sidebar-scoped rule below turns them back on. */
 #sidebar{display:none}
 #siteHome,#welcomeScrim,#welcomeCloseBtn{display:none}
+/* The home page always uses the dark palette, regardless of the signed-in app's own light/dark/
+   system theme setting (there's no one signed in yet to have a preference) -- same values as
+   :root[data-theme="dark"] above, just scoped here so every #siteHome-scoped rule below picks them
+   up via the usual var(--bg) etc. without needing its own light/dark variants. */
+#siteHome{
+  --bg:#0F141C;--surface:#171D27;--sunk:#1F2632;--ink:#F1F5F9;--muted:#94A3B8;--line:#2A3342;
+  --brass:#3B82F6;--brass-ink:#FFFFFF;color-scheme:dark;
+}
 .side-icon,.side-label,.sheet-x,#selectCancelBtn{display:none}
 #mainArea{margin-left:0}
 @media (min-width:1300px){
@@ -676,6 +684,11 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
   body.welcome-popup .welcome{inset:auto;top:50%;left:50%;transform:translate(-50%,-50%);
     width:min(420px,calc(100vw - 32px));max-height:85vh;overflow-y:auto;background:var(--surface);
     border-radius:20px;box-shadow:0 24px 64px rgba(15,23,42,.35);padding:40px 28px 32px}
+  /* .welcome-version is normally position:absolute, pinned near the bottom of the full-screen
+     splash -- in the popup, where the card's height just wraps its content, that put it right up
+     against whichever button happened to be last. Back into the flex column's own flow instead, so
+     it gets the same gap as everything else above it. */
+  body.welcome-popup .welcome-version{position:static;transform:none;margin-top:4px}
   body.welcome-popup #welcomeCloseBtn{display:grid;position:absolute;top:14px;right:14px;width:34px;height:34px;
     border-radius:50%;place-items:center;cursor:pointer;background:transparent;border:0;color:var(--muted)}
   body.welcome-popup #welcomeCloseBtn:hover{background:var(--sunk)}
@@ -1187,9 +1200,13 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.45";
+const APP_VERSION = "1.6.46";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.46", date: "22 Nov 2026", items: [
+    ["The home page always uses the dark look now, regardless of your theme setting -- there's no one signed in yet to have a preference.", ["desktop"]],
+    ["Fixed its login pop-up crowding the version number right under the Create account button."]
+  ] },
   { version: "1.6.45", date: "22 Nov 2026", items: [
     ["Added the mi. mark to the home page's footer.", ["desktop"]]
   ] },
