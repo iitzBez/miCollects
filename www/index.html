@@ -1047,10 +1047,16 @@ function hideWelcomeIfOnboarded() {
   // at that point, so this correctly leaves #welcome alone rather than hiding it on a stale
   // settings.onboarded that says nothing about whether this load is actually signed in).
   if (cloudEnabled ? !cloudUser : !settings.onboarded) {
-    // Not known to be signed in (yet, or genuinely signed out) -- on desktop, show the public
-    // home page instead of the full-screen login. Uses matchMedia directly, not the shared
-    // desktopQuery, because this runs synchronously before desktopQuery exists further down.
-    if (matchMedia("(min-width:1300px)").matches) showSiteHome();
+    // Not known to be signed in yet -- but settings.onboarded being true means this browser has
+    // signed in successfully before (it's permanent, see above), so a hard refresh is far more
+    // likely resuming that session than a fresh visitor. Only show the home page here for a
+    // genuinely new visitor; a returning one just sees the plain loading splash for the moment it
+    // takes Firebase to confirm, same as before this feature existed, instead of a flash of the
+    // marketing page's example cards. Once confirmed signed out, maybeShowWelcome below still shows
+    // the home page on desktop regardless of settings.onboarded's permanent, unrelated value.
+    // Uses matchMedia directly, not the shared desktopQuery, because this runs synchronously
+    // before desktopQuery exists further down.
+    if (!settings.onboarded && matchMedia("(min-width:1300px)").matches) showSiteHome();
     return;
   }
   const w = document.getElementById("welcome");
@@ -1173,9 +1179,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.42";
+const APP_VERSION = "1.6.43";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.43", date: "22 Nov 2026", items: [
+    ["Fixed a hard refresh briefly flashing the new home page's example cards before your actual collection loaded, if you were already signed in.", ["desktop"]]
+  ] },
   { version: "1.6.42", date: "22 Nov 2026", items: [
     ["A new home page introduces miCollects before you sign in, with Login and Create account taking you straight to the sign-in screen -- and signing out brings you back to it.", ["desktop"]]
   ] },
