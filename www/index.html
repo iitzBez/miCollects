@@ -629,11 +629,12 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
      all and goes straight to #welcome as before. Its Login/Create account buttons open #welcome
      as a centered popup over a blurred copy of this page (see body.welcome-popup below), reusing
      the existing sign-in/sign-up form logic completely unchanged. */
-  #siteHome:not([hidden]){display:block;position:fixed;inset:0;z-index:25;background:var(--bg);overflow-y:auto}
+  #siteHome:not([hidden]){display:flex;flex-direction:column;position:fixed;inset:0;z-index:25;
+    background:var(--bg);overflow-y:auto}
   .site-header{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;
     padding-top:18px;padding-bottom:18px;padding-left:max(24px,env(safe-area-inset-left,0px));
     padding-right:max(24px,env(safe-area-inset-right,0px));background:var(--bg);border-bottom:1px solid var(--line)}
-  .site-header .brand{margin:0}
+  .site-header .brand{margin:0;font-size:24px}
   .site-hero{max-width:min(94vw,1920px);margin:0 auto;padding:64px 24px 40px;display:grid;
     grid-template-columns:1.1fr 1fr;gap:48px;align-items:center}
   .site-eyebrow{font:700 13px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--brass);margin:0 0 14px}
@@ -658,7 +659,7 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
   .site-feature{padding:22px;border-radius:16px;background:var(--sunk)}
   .site-feature h3{font:700 16px/1.3 var(--display);margin:0 0 6px;color:var(--ink)}
   .site-feature p{font:500 14px/1.5 var(--body);color:var(--muted);margin:0}
-  .site-footer{border-top:1px solid var(--line);text-align:center;font:500 13px/1.5 var(--body);color:var(--muted);
+  .site-footer{margin-top:auto;border-top:1px solid var(--line);text-align:center;font:500 13px/1.5 var(--body);color:var(--muted);
     padding-top:24px;padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));
     padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}
 
@@ -1179,9 +1180,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.43";
+const APP_VERSION = "1.6.44";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.44", date: "22 Nov 2026", items: [
+    ["The home page's logo was too small and its footer no longer sat at the bottom of the page -- both fixed.", ["desktop"]]
+  ] },
   { version: "1.6.43", date: "22 Nov 2026", items: [
     ["Fixed a hard refresh briefly flashing the new home page's example cards before your actual collection loaded, if you were already signed in.", ["desktop"]]
   ] },
