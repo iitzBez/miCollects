@@ -452,7 +452,61 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
    there has no mobile equivalent; "Summary"/"Settings" need to go from icon-only to icon+text) -- both
    stay display:none until a #sidebar-scoped rule below turns them back on. */
 #sidebar{display:none}
-#siteHome,#welcomeScrim,#welcomeCloseBtn{display:none}
+#welcomeScrim,#welcomeCloseBtn{display:none}
+/* Public home page -- shown instead of the full-screen #welcome splash before anyone is signed in,
+   on any browser tab (desktop or mobile Chrome/Safari/etc.), but never inside the installed "Add to
+   Home Screen" shortcut, which goes straight to the full-screen login as it always has (see
+   isStandaloneShortcut, hideWelcomeIfOnboarded, maybeShowWelcome). Mobile-first base styles here;
+   desktop-only enhancements (wider hero, bigger logo, multi-column features) are further down in
+   the @media(min-width:1300px) block. Its Login/Create account buttons open #welcome -- at desktop
+   widths that's a centered popup over a blurred copy of this page (see body.welcome-popup further
+   down), everywhere else it's just the plain full-screen login -- reusing the existing sign-in/
+   sign-up form logic completely unchanged either way. */
+#siteHome:not([hidden]){display:flex;flex-direction:column;position:fixed;inset:0;z-index:25;
+  background:var(--bg);overflow-y:auto}
+.site-header{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;
+  padding-top:16px;padding-bottom:16px;padding-left:max(20px,env(safe-area-inset-left,0px));
+  padding-right:max(20px,env(safe-area-inset-right,0px));background:var(--bg);border-bottom:1px solid var(--line)}
+.site-header .brand{margin:0;font-size:19px}
+.site-hero{max-width:min(94vw,1920px);margin:0 auto;padding:36px 20px 32px;display:grid;
+  grid-template-columns:1fr;gap:32px;align-items:center}
+/* Grid items default to min-width:auto, sized by their own content's min-content width -- without
+   this, .site-grid-preview's own 3-column grid can force .site-hero wider than the viewport on
+   narrow screens, overflowing it horizontally instead of shrinking to fit. */
+.site-hero>*{min-width:0}
+.site-eyebrow{font:700 13px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--brass);margin:0 0 14px}
+.site-hero h1{font:800 clamp(32px,4vw,56px)/1.25 var(--display);letter-spacing:-.02em;color:var(--ink);margin:0 0 18px;
+  /* The global h1{} rule above is for the app's own single-line page title (ellipsizes a long
+     collection name instead of wrapping/overflowing its toolbar) -- this headline is a real
+     two-line heading (the <br> in its markup), so undo all three of those for it specifically. */
+  white-space:normal;overflow:visible;text-overflow:clip}
+.site-hero p{font:500 17px/1.6 var(--body);color:var(--muted);max-width:480px;margin:0 0 28px}
+.site-ctas{display:flex;gap:12px;flex-wrap:wrap}
+.site-ctas .btn{width:auto;flex:none;padding:0 24px}
+@media (max-width:479.98px){.site-ctas{flex-direction:column}.site-ctas .btn{width:100%}}
+.site-grid-preview{position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;padding:12px}
+.gp-card{aspect-ratio:1;border-radius:20px;background:var(--surface);border:1px solid var(--line);
+  display:grid;place-items:center;box-shadow:0 10px 30px rgba(15,23,42,.08);animation:gpFloat 6s ease-in-out infinite}
+.gp-card svg{width:42%;height:42%}
+.gp-card:nth-child(2){animation-delay:.4s}
+.gp-card:nth-child(3){animation-delay:.8s}
+.gp-card:nth-child(4){animation-delay:1.2s}
+.gp-card:nth-child(5){animation-delay:1.6s}
+.gp-card:nth-child(6){animation-delay:2s}
+@keyframes gpFloat{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-6%) rotate(-3deg)}}
+@media (prefers-reduced-motion:reduce){.gp-card{animation:none}}
+.site-features{max-width:min(94vw,1920px);margin:0 auto;padding:8px 20px 48px;
+  display:grid;grid-template-columns:1fr;gap:14px}
+.site-feature{padding:20px;border-radius:16px;background:var(--sunk)}
+.site-feature h3{font:700 16px/1.3 var(--display);margin:0 0 6px;color:var(--ink)}
+.site-feature p{font:500 14px/1.5 var(--body);color:var(--muted);margin:0}
+.site-footer{margin-top:auto;border-top:1px solid var(--line);text-align:center;font:500 13px/1.5 var(--body);color:var(--muted);
+  padding-top:24px;padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));
+  padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
+.site-footer p{margin:0}
+.site-footer .footer-mark{display:flex;align-items:flex-end;justify-content:center;gap:3px;
+  font:800 22px/1 var(--display);letter-spacing:-.02em;color:var(--ink);margin-bottom:16px}
+.footer-dot{width:7px;height:7px;border-radius:50%;background:var(--brass);margin-bottom:3px}
 .side-icon,.side-label,.sheet-x,#selectCancelBtn{display:none}
 #mainArea{margin-left:0}
 @media (min-width:1300px){
@@ -624,48 +678,18 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
      same .select-bar this reuses unchanged, not a new rebuilt one. */
   .card:hover .sel-dot{opacity:1}
 
-  /* Public home page -- desktop only. Shown instead of the full-screen #welcome splash before
-     anyone is signed in (see hideWelcomeIfOnboarded/maybeShowWelcome); mobile never sees this at
-     all and goes straight to #welcome as before. Its Login/Create account buttons open #welcome
-     as a centered popup over a blurred copy of this page (see body.welcome-popup below), reusing
-     the existing sign-in/sign-up form logic completely unchanged. */
-  #siteHome:not([hidden]){display:flex;flex-direction:column;position:fixed;inset:0;z-index:25;
-    background:var(--bg);overflow-y:auto}
-  .site-header{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;
-    padding-top:18px;padding-bottom:18px;padding-left:max(24px,env(safe-area-inset-left,0px));
-    padding-right:max(24px,env(safe-area-inset-right,0px));background:var(--bg);border-bottom:1px solid var(--line)}
-  .site-header .brand{margin:0;font-size:24px}
-  .site-hero{max-width:min(94vw,1920px);margin:0 auto;padding:64px 24px 40px;display:grid;
-    grid-template-columns:1.1fr 1fr;gap:48px;align-items:center}
-  .site-eyebrow{font:700 13px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--brass);margin:0 0 14px}
-  .site-hero h1{font:800 clamp(32px,4vw,56px)/1.25 var(--display);letter-spacing:-.02em;color:var(--ink);margin:0 0 18px}
-  .site-hero p{font:500 17px/1.6 var(--body);color:var(--muted);max-width:480px;margin:0 0 28px}
-  .site-ctas{display:flex;gap:12px;flex-wrap:wrap}
-  .site-ctas .btn{width:auto;flex:none;padding:0 24px}
-  .site-grid-preview{position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:18px;padding:12px}
-  .gp-card{aspect-ratio:1;border-radius:20px;background:var(--surface);border:1px solid var(--line);
-    display:grid;place-items:center;box-shadow:0 10px 30px rgba(15,23,42,.08);animation:gpFloat 6s ease-in-out infinite}
-  .gp-card svg{width:42%;height:42%}
-  .gp-card:nth-child(2){animation-delay:.4s}
-  .gp-card:nth-child(3){animation-delay:.8s}
-  .gp-card:nth-child(4){animation-delay:1.2s}
-  .gp-card:nth-child(5){animation-delay:1.6s}
-  .gp-card:nth-child(6){animation-delay:2s}
-  @keyframes gpFloat{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-6%) rotate(-3deg)}}
-  @media (prefers-reduced-motion:reduce){.gp-card{animation:none}}
-  .site-features{max-width:min(94vw,1920px);margin:0 auto;padding:40px 24px 64px;
-    display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  /* Desktop-only enhancements to the public home page (base, mobile-first styles are up with the
+     rest of #siteHome's rules, outside this media query): a wider two-column hero instead of a
+     single stacked column, a bigger logo matching the sidebar's own treatment, more breathing room,
+     and a 3-then-6-column feature grid instead of the mobile single-column list. */
+  .site-header{padding-top:18px;padding-bottom:18px;padding-left:max(24px,env(safe-area-inset-left,0px));
+    padding-right:max(24px,env(safe-area-inset-right,0px))}
+  .site-header .brand{font-size:24px}
+  .site-hero{padding:64px 24px 40px;grid-template-columns:1.1fr 1fr;gap:48px}
+  .site-grid-preview{gap:18px}
+  .site-features{padding:40px 24px 64px;grid-template-columns:repeat(3,1fr);gap:20px}
   @media (min-width:1700px){.site-features{grid-template-columns:repeat(6,1fr)}}
-  .site-feature{padding:22px;border-radius:16px;background:var(--sunk)}
-  .site-feature h3{font:700 16px/1.3 var(--display);margin:0 0 6px;color:var(--ink)}
-  .site-feature p{font:500 14px/1.5 var(--body);color:var(--muted);margin:0}
-  .site-footer{margin-top:auto;border-top:1px solid var(--line);text-align:center;font:500 13px/1.5 var(--body);color:var(--muted);
-    padding-top:24px;padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));
-    padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}
-  .site-footer p{margin:0}
-  .site-footer .footer-mark{display:flex;align-items:flex-end;justify-content:center;gap:3px;
-    font:800 22px/1 var(--display);letter-spacing:-.02em;color:var(--ink);margin-bottom:16px}
-  .footer-dot{width:7px;height:7px;border-radius:50%;background:var(--brass);margin-bottom:3px}
+  .site-footer{padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}
 
   /* #welcome, reopened as a centered popup over the (blurred) home page -- same markup and
      sign-in/sign-up logic as the full-screen version, just restyled while body.welcome-popup is
@@ -1047,6 +1071,14 @@ function applyTheme() {
   else root.removeAttribute("data-theme");
 }
 applyTheme();
+/* True only for the installed "Add to Home Screen" shortcut (manifest.json's display:"standalone"
+   launches into this on Android/Chrome; navigator.standalone is iOS Safari's own, older equivalent
+   signal for the same thing) -- the one case that should skip the public home page below and go
+   straight to the full-screen login, same as every ordinary mobile browser tab used to before the
+   home page existed. A regular mobile browser tab (Chrome, Safari, ...) matches neither, so it now
+   gets the home page too, same as desktop. */
+const isStandaloneShortcut = matchMedia("(display-mode: standalone)").matches ||
+  matchMedia("(display-mode: fullscreen)").matches || window.navigator.standalone === true;
 /* #welcome defaults to visible in the markup (not [hidden]) so it's the very first thing painted --
    waiting for store.open() etc. to resolve before showing it let the home screen flash underneath
    for a moment on a brand-new install. Hide it immediately, synchronously, if onboarding is already
@@ -1066,10 +1098,9 @@ function hideWelcomeIfOnboarded() {
     // genuinely new visitor; a returning one just sees the plain loading splash for the moment it
     // takes Firebase to confirm, same as before this feature existed, instead of a flash of the
     // marketing page's example cards. Once confirmed signed out, maybeShowWelcome below still shows
-    // the home page on desktop regardless of settings.onboarded's permanent, unrelated value.
-    // Uses matchMedia directly, not the shared desktopQuery, because this runs synchronously
-    // before desktopQuery exists further down.
-    if (!settings.onboarded && matchMedia("(min-width:1300px)").matches) showSiteHome();
+    // the home page (any browser tab, not the installed shortcut) regardless of settings.onboarded's
+    // permanent, unrelated value.
+    if (!settings.onboarded && !isStandaloneShortcut) showSiteHome();
     return;
   }
   const w = document.getElementById("welcome");
@@ -1192,9 +1223,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.49";
+const APP_VERSION = "1.6.50";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.50", date: "22 Nov 2026", items: [
+    ["The home page now shows in mobile browsers too (Chrome, Safari, ...), not just desktop -- the installed home-screen shortcut still skips straight to the login, same as before.", ["mobile"]]
+  ] },
   { version: "1.6.49", date: "22 Nov 2026", items: [
     ["Fixed the home page's headline clipping the descenders of letters like y and g against the text below it."]
   ] },
@@ -3320,7 +3354,7 @@ function maybeShowWelcome(force) {
       forceFullScreenWelcome = false;
       document.body.classList.remove("welcome-popup"); hideSiteHome(); showWelcome(); return;
     }
-    if (desktopQuery.matches) { showSiteHome(); return; }
+    if (!isStandaloneShortcut) { showSiteHome(); return; }
     showWelcome();
   }
 }
@@ -3329,7 +3363,10 @@ function maybeShowWelcome(force) {
    home page while body.welcome-popup is set. closeWelcomePopup() is the reverse: back to the home
    page, no sign-in state lost since nothing here touches the form itself. */
 function openWelcomeFromHome() {
-  document.body.classList.add("welcome-popup");
+  // The centered-popup-over-a-blurred-page treatment only exists/looks right at desktop widths
+  // (see the @media(min-width:1300px) rules for body.welcome-popup); everywhere else this just
+  // shows the plain full-screen login, same as a mobile browser tab always has.
+  if (desktopQuery.matches) document.body.classList.add("welcome-popup");
   showWelcome();
 }
 function closeWelcomePopup() {
@@ -4602,14 +4639,14 @@ function relocateSearchForViewport() {
 const desktopQuery = matchMedia("(min-width:1300px)");
 desktopQuery.addEventListener("change", relocateSearchForViewport);
 relocateSearchForViewport();
-// Resizing across the desktop breakpoint while signed out should swap #siteHome/#welcome to match,
-// same as every other piece of UI that relocates on this breakpoint -- a forced sign-out's own
-// full-screen #welcome is a one-off (maybeShowWelcome(true)), not a state this needs to track.
+// The home page itself no longer depends on this breakpoint (it shows at any width now, see
+// isStandaloneShortcut), but the popup-over-a-blurred-page treatment is still desktop-only -- if a
+// signed-out visitor shrinks the window below it mid-popup, drop back to the plain full-screen
+// login instead of leaving the now-unstyled popup CSS applied.
 desktopQuery.addEventListener("change", () => {
-  if (!appReady) return;
+  if (!appReady || desktopQuery.matches) return;
   if (cloudEnabled ? cloudUser : settings.onboarded) return;
   document.body.classList.remove("welcome-popup");
-  if (desktopQuery.matches) showSiteHome(); else showWelcome();
 });
 
 /* Same physical-DOM-move trick as the search bar, generalized to every piece that moves into the
