@@ -1008,9 +1008,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.38";
+const APP_VERSION = "1.6.39";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.39", date: "22 Nov 2026", items: [
+    ["Image Recognition's \"Add a photo\" now explicitly asks Take a photo or Choose from gallery on mobile web (same as the app always did), instead of relying on the phone browser's own file picker to offer a camera option on its own.", ["mobile"]]
+  ] },
   { version: "1.6.38", date: "22 Nov 2026", items: [
     ["Image Recognition's \"Add a photo\" was quietly losing its Camera option on mobile, falling back to gallery/file browsing only -- allowing more than one photo per selection was the cause, now fixed (photos are still added one at a time there anyway).", ["mobile"]]
   ] },
@@ -1781,7 +1784,7 @@ function pickPhotoSource() {
 }
 function wireCamera(it, paintPhotos, dup) {
   const camBatch = [];
-  const btn = $("#camBtn"), doneBtn = $("#camDoneBtn"), hint = $("#camHint"), fileIn = $("#camFileIn");
+  const btn = $("#camBtn"), doneBtn = $("#camDoneBtn"), hint = $("#camHint"), fileIn = $("#camFileIn"), captureIn = $("#camCaptureIn");
   const show = msg => { hint.hidden = false; hint.textContent = msg; };
   const addOne = compressed => {
     if (camBatch.length === 0) photos.unshift(compressed); else if (photos.length < MAXP) photos.push(compressed);
@@ -1799,9 +1802,15 @@ function wireCamera(it, paintPhotos, dup) {
   btn.addEventListener("click", async () => {
     const P = window.Capacitor && window.Capacitor.Plugins;
     if (!P || !P.Camera) {
-      // Web (desktop or mobile browser): there's no native camera plugin here, and no camera-vs-
-      // gallery choice to make either -- a photo for recognition can only come from a file already
-      // on the device, so skip straight to the OS's own (camera-less) file picker.
+      if (!desktopQuery.matches) {
+        // Mobile web: same Take a photo / Choose from gallery choice the native path offers, just
+        // answered with two differently-configured file inputs instead of a plugin call.
+        const source = await pickPhotoSource();
+        if (source === "CAMERA") captureIn.click();
+        else if (source === "PHOTOS") fileIn.click();
+        return;
+      }
+      // Desktop web: no camera to offer at all, so skip straight to the OS's own file picker.
       fileIn.click();
       return;
     }
@@ -1834,7 +1843,7 @@ function wireCamera(it, paintPhotos, dup) {
     finally { btn.disabled = false; }
   });
 
-  fileIn.addEventListener("change", async e => {
+  const onFileInChange = async e => {
     const remaining = CAM_MAX - camBatch.length;
     const files = [...(e.target.files || [])].slice(0, remaining);
     e.target.value = "";
@@ -1845,7 +1854,9 @@ function wireCamera(it, paintPhotos, dup) {
       for (const f of files) { try { addOne(await compress(f)); got++; } catch (err) { show(err.message || "Couldn’t read that photo."); } }
       if (got) afterAdd();
     } finally { btn.disabled = false; }
-  });
+  };
+  fileIn.addEventListener("change", onFileInChange);
+  captureIn.addEventListener("change", onFileInChange);
 
   doneBtn.addEventListener("click", async () => {
     if (!camBatch.length) return;
@@ -2289,11 +2300,13 @@ function openForm(item, convertTo) {
     <div class="photo-main" id="photoMain"></div>
     <div class="thumbs" id="thumbs"></div>
     <input type="file" accept="image/*" id="photoIn" multiple hidden>
-    <!-- No "multiple" here, unlike #photoIn below -- Android Chrome drops the one-tap Camera shortcut
-         from its file-picker sheet (falling back to a gallery/file browser only) once a file input
-         also allows multiple selection, which was quietly removing the camera option for Image
-         Recognition on mobile web. Single-file selection matches how this already behaves anyway
-         (one photo per "Add Another Photo" tap, same as the native Capacitor path). -->
+    <!-- Two separate inputs, not one -- relying on a single <input> to surface a native Camera
+         shortcut in its own picker sheet turned out inconsistent across mobile browsers. These give
+         Take a photo / Choose from gallery (see pickPhotoSource() in wireCamera() below) a guaranteed,
+         explicit answer instead: capture="environment" always opens the camera app directly, and the
+         plain input always opens the gallery/file browser. Neither has "multiple" -- recognition
+         already adds photos one at a time regardless (the UI re-prompts via "Add Another Photo"). -->
+    <input type="file" accept="image/*" capture="environment" id="camCaptureIn" hidden>
     <input type="file" accept="image/*" id="camFileIn" hidden>
     <div class="field">
       <label for="f-name">Name</label>
