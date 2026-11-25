@@ -1094,21 +1094,38 @@ try { Object.assign(settings, JSON.parse(localStorage.getItem("cabinet-settings"
    here, before first paint, so the #welcome-hiding decision below can account for it immediately --
    waiting for Firebase to resolve the restored session first is what caused the home screen to
    flash before redirecting to the sign-in screen on a stale reopen. */
-const INACTIVITY_LIMIT_MS = 7 * 24 * 60 * 60 * 1000; // 7 days of backgrounded/closed inactivity before auto sign-out
-// 1 hour of inactivity with the tab left open (not closed) auto-locks instead -- only meaningful
-// where device unlock is enabled (see the visibilitychange listener near onAuthStateChanged below,
-// and isLocked()'s own comment further down for what "locked" actually means here).
+// Two completely separate timeout tracks, chosen per device by whether it has biometric unlock
+// enrolled (localStorage's bio-unlock-uid/-cred-id -- known synchronously, before Firebase has even
+// confirmed who's signed in, which matters below). A device with nothing to unlock with has nothing
+// useful to lock either, so it just keeps the original flat sign-out as its only timeout, unchanged:
+const INACTIVITY_LIMIT_MS = 7 * 24 * 60 * 60 * 1000; // no biometric unlock: straight to sign-out after 7 days inactive
+// A device WITH biometric unlock enrolled ignores the figure above entirely and uses this pair
+// instead -- 1 hour inactive locks (gate behind Face ID/Touch ID/fingerprint, see isLocked()
+// further down), and only past 24 hours inactive does it give up on ever being unlocked again and
+// signs out outright, same as the flat case above does for everyone else.
 const LOCK_LIMIT_MS = 60 * 60 * 1000;
+const LOCKED_SIGNOUT_LIMIT_MS = 24 * 60 * 60 * 1000;
 const LAST_ACTIVE_KEY = "mc-last-active";
 function markActive() { try { localStorage.setItem(LAST_ACTIVE_KEY, String(Date.now())); } catch (e) {} }
+// Single source of truth for "how long has it really been, and what does that mean" -- shared by the
+// synchronous startup check right below and the visibilitychange listener near onAuthStateChanged
+// (the web equivalent of a foreground/background transition, for a tab that was left open the
+// whole time rather than closed and reopened). Deliberately read-only: callers decide when to
+// actually call markActive() themselves, since the startup check needs to read the OLD timestamp
+// before resetting it.
+function checkInactivity() {
+  let last = 0;
+  try { last = +(localStorage.getItem(LAST_ACTIVE_KEY) || 0); } catch (e) {}
+  const elapsed = last ? Date.now() - last : 0;
+  const deviceHasBio = !!localStorage.getItem("bio-unlock-uid") && !!localStorage.getItem("bio-unlock-cred-id");
+  const signOutLimit = deviceHasBio ? LOCKED_SIGNOUT_LIMIT_MS : INACTIVITY_LIMIT_MS;
+  const signOut = !!last && elapsed > signOutLimit;
+  return { signOut, lock: deviceHasBio && !signOut && !!last && elapsed > LOCK_LIMIT_MS };
+}
 function markActiveAndCheckTimeout() {
-  let exceeded = false;
-  try {
-    const last = +(localStorage.getItem(LAST_ACTIVE_KEY) || 0);
-    exceeded = !!last && (Date.now() - last) > INACTIVITY_LIMIT_MS;
-  } catch (e) {}
+  const { signOut } = checkInactivity();
   markActive();
-  return exceeded;
+  return signOut;
 }
 /* A background/foreground transition isn't only triggered by the user actually leaving the app --
    some Android versions fire a pause/resume blip from things like the keyboard or an autofill
@@ -1127,6 +1144,12 @@ function markActiveFromInteraction() {
 }
 document.addEventListener("pointerdown", markActiveFromInteraction, { passive: true });
 document.addEventListener("keydown", markActiveFromInteraction);
+// Checked once here, synchronously, same timing/reasoning as pendingInactivitySignOut's own comment
+// above it (cloudUser isn't known yet, so acting on this is deferred to onAuthStateChanged too --
+// see its own use of pendingInactivityLock there). Read before markActiveAndCheckTimeout() resets
+// the clock below, from the SAME stored timestamp, so this and pendingInactivitySignOut agree with
+// each other about how much time has actually passed.
+let pendingInactivityLock = checkInactivity().lock;
 let pendingInactivitySignOut = markActiveAndCheckTimeout();
 /* "system" means no override: the prefers-color-scheme media query in the CSS takes it from there.
    Applied immediately on load (before first paint) so there's no flash of the wrong theme, and again
@@ -1328,9 +1351,13 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.61";
+const APP_VERSION = "1.6.62";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.62", date: "25 Nov 2026", items: [
+    ["Fixed \"Sign out instead\" on the lock screen briefly flashing the signed-in Collection/Wishlist screen before actually signing out."],
+    ["With device unlock on, auto-sign-out after inactivity now happens 24 hours after auto-locking, instead of the usual 7 days -- the extra lock step in between means that account can afford a shorter final timeout. Without device unlock, nothing changes."]
+  ] },
   { version: "1.6.61", date: "25 Nov 2026", items: [
     ["Fixed the Face ID/fingerprint lock screen reappearing just from reopening the app or signing back in -- it's now only shown after actually tapping Lock, or the new 1-hour auto-lock below."],
     ["Added an auto-lock: with device unlock on, leaving the app open but unused for an hour now locks it, the same as tapping Lock yourself. Without device unlock, nothing changes -- the existing automatic sign-out still applies after its own longer timeout."]
@@ -3561,6 +3588,13 @@ if (cloudEnabled) {
     if (appReady && user) cloudPullAll(true);
     refreshSettingsIfOpen();
     if (!authResolvedOnce) { authResolvedOnce = true; if (user) { settings.onboarded = true; saveSettings(); } }
+    // Same deferred-until-user-is-known reasoning as pendingInactivitySignOut -- reopening the app
+    // itself past the 1-hour mark (not just an already-open tab regaining visibility, see the
+    // visibilitychange listener below) should also lock, not just a resumed-but-never-closed tab.
+    if (user && pendingInactivityLock) {
+      pendingInactivityLock = false;
+      if (bioEnabledFor(user.uid)) localStorage.setItem("bio-locked", user.uid);
+    }
     // The startup hold (see pendingInactivitySignOut above) is resolved now -- hide #welcome, unless
     // we're about to force it open right below, which would just flash it hidden then shown again.
     if (!forceWelcomeNext) hideWelcomeIfOnboarded();
@@ -3572,22 +3606,18 @@ if (cloudEnabled) {
    checks for -- markActiveAndCheckTimeout() above (and the now-retired Capacitor appStateChange
    listener near PTR) only ever run at a fresh page load. "Returning to a visible tab after it was
    hidden a while" is the web equivalent of a native app's foreground/background transition, and is
-   the realistic way "left unused for an hour/a week" actually happens for an open site: the phone's
-   screen went off, or another tab/app had focus, not that this one got closed. 7 days always signs
-   out outright, same as the existing startup check; 1 hour only locks, and only where device unlock
-   is actually enabled for the signed-in account -- otherwise neither applies here at all, the tab
-   just keeps running signed in until it either hits the 7-day mark or gets closed and reopened. */
+   the realistic way "left unused for an hour/a day" actually happens for an open site: the phone's
+   screen went off, or another tab/app had focus, not that this one got closed. checkInactivity()
+   picks the right pair of thresholds for this device (see its own comment) -- signOut always wins
+   outright over lock if somehow both apply, same precedence the startup check already uses. */
 document.addEventListener("visibilitychange", () => {
   if (!cloudEnabled || document.visibilityState !== "visible" || !appReady || !cloudUser) return;
-  let last = 0;
-  try { last = +(localStorage.getItem(LAST_ACTIVE_KEY) || 0); } catch (e) {}
-  const elapsed = last ? Date.now() - last : 0;
+  const { signOut, lock } = checkInactivity();
   markActive();
-  if (!last) return;
-  if (elapsed > INACTIVITY_LIMIT_MS) {
+  if (signOut) {
     forceWelcomeNext = true; forceFullScreenWelcome = true;
     fbAuth.signOut().catch(() => {});
-  } else if (elapsed > LOCK_LIMIT_MS && bioEnabledFor(cloudUser.uid)) {
+  } else if (lock) {
     localStorage.setItem("bio-locked", cloudUser.uid);
     showBioUnlock();
   }
@@ -4787,10 +4817,12 @@ $("#bioUnlockBtn").addEventListener("click", attemptBioUnlock);
 // lock screen itself (signOutOrLock() below is what the Done ... Sign out button elsewhere calls,
 // and that's the one that locks instead when device unlock applies).
 $("#bioUnlockSignOutBtn").addEventListener("click", () => {
-  // Hidden immediately, synchronously -- showSiteHome()/showWelcome() also do this defensively once
-  // onAuthStateChanged actually comes back, but that's a real async round-trip through Firebase, and
-  // leaving the lock screen up until then looked exactly like the click had done nothing at all.
-  document.getElementById("bioUnlock").hidden = true;
+  // Replaced immediately, synchronously, with whatever a real sign-out will land on anyway (the
+  // same choice maybeShowWelcome() makes once onAuthStateChanged(null) actually comes back) --
+  // merely hiding #bioUnlock here left the real app's Collection/Wishlist grid exposed underneath
+  // it (it was never actually hidden, just covered by this overlay) for that whole async gap, which
+  // showed as a flash of the signed-in app before the sign-out had actually gone through.
+  if (!isStandaloneShortcut) showSiteHome(); else showWelcome();
   forceWelcomeNext = true; cloudSignOut();
 });
 /* The normal "Sign out" button (Account, and the sidebar's quick sign-out confirm) -- when this
