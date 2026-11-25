@@ -29,7 +29,12 @@ export const onRequestPost = handlePost(async ({ request, env, body }) => {
   // so a minor version bump doesn't silently break enrollment.
   const info = verification.registrationInfo;
   const cred = info.credential || info;
-  const credentialId = cred.id || (cred.credentialID && bytesToB64url(cred.credentialID));
+  // The *client's own* response.id (not whatever the library's verification result re-derives/
+  // re-encodes it as) is what passkey-auth-verify will be handed back verbatim by the browser on
+  // every future sign-in with this exact credential -- storing under anything else risked a subtle
+  // encoding mismatch (e.g. padding) between the two, which is exactly what caused enrolled passkeys
+  // to come back as "not registered here" at sign-in.
+  const credentialId = response.id;
   const publicKeyBytes = cred.publicKey || cred.credentialPublicKey;
   const counter = cred.counter ?? 0;
   const transports = (response.response && response.response.transports) || cred.transports || [];
