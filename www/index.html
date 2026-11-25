@@ -1249,9 +1249,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.53";
+const APP_VERSION = "1.6.54";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.54", date: "25 Nov 2026", items: [
+    ["Fixed saving an item with a new photo failing to sync to the cloud every time (it still saved locally) -- a security header added last week was blocking the photo upload step specifically."]
+  ] },
   { version: "1.6.53", date: "22 Nov 2026", items: [
     ["Fixed pull-to-sync hijacking scroll gestures on the new home page -- it's only meant for the signed-in Collection/Wishlist screens.", ["mobile"]]
   ] },
