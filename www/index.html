@@ -407,7 +407,6 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
 .btn.danger.armed{background:var(--danger);color:#fff;border-color:var(--danger)}
 .more{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
 .more .btn{flex:1}
-.backup-text{width:100%;min-height:120px;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:8px;margin-top:10px}
 
 .settings-tabs{display:flex;gap:4px;margin:4px 0 18px;border-bottom:1px solid var(--line)}
 .stab{flex:1;background:none;border:0;border-bottom:2px solid transparent;padding:10px 4px;font:650 14px/1.2 var(--body);color:var(--muted);cursor:pointer}
@@ -1249,9 +1248,13 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.54";
+const APP_VERSION = "1.6.55";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.55", date: "25 Nov 2026", items: [
+    ["Export backup now reliably saves a real file (a proper Save As on desktop, a real download on mobile web), instead of sometimes only copying it to the clipboard."],
+    ["Removed the redundant \"Open listing\" link under an item's product link field."]
+  ] },
   { version: "1.6.54", date: "25 Nov 2026", items: [
     ["Fixed saving an item with a new photo failing to sync to the cloud every time (it still saved locally) -- a security header added last week was blocking the photo upload step specifically."]
   ] },
@@ -2606,7 +2609,7 @@ function openForm(item, convertTo) {
         <input id="f-url" type="url" inputmode="url" autocomplete="off" placeholder="Paste a product link" value="${val(it.url)}">
         <button type="button" class="btn primary" id="urlBtn">Fetch</button>
       </div>
-      <p class="hint" id="urlHint">${it.url && !isNew ? `<a href="${val(it.url)}" target="_blank" rel="noopener">Open listing</a>` : "Paste a link from an online shop to fill in the details automatically."}</p>
+      <p class="hint" id="urlHint">${it.url && !isNew ? "" : "Paste a link from an online shop to fill in the details automatically."}</p>
       <div class="field"><label for="f-producturl">URL</label>
         <div class="url-row">
           <input id="f-producturl" type="url" inputmode="url" autocomplete="off" placeholder="Link to view this product" value="${val(it.productUrl)}">
@@ -3541,7 +3544,6 @@ function generalTabHtml() {
       <label class="btn ghost" for="impIn">Import backup</label>
       <input type="file" id="impIn" accept="application/json,.json,text/plain,.txt" hidden>
     </div>
-    <div id="backupOut"></div>
     <h3>App theme</h3>
     <div class="field"><label for="s-theme">Theme</label>
       <button type="button" class="select-btn" id="s-theme"><span>${esc((THEME_OPTIONS.find(t => t[0] === settings.theme) || THEME_OPTIONS[0])[1])}</span>${CHEVRON_SVG}</button></div>
@@ -4299,39 +4301,17 @@ function openSettings() {
   showSheet();
 }
 
+// Previously had its own separate Capacitor/Web-Share/clipboard cascade, ending in a
+// clipboard-copy ("Backup copied. Paste it into a note or email to keep it.") as soon as Web
+// Share's file support wasn't available for a .json file on a given mobile browser -- same failure
+// mode shareOrDownload() was already rewritten to fix elsewhere (treating share as an alternative to
+// actually saving, instead of a bonus after it). Reusing that proven cascade here instead: Capacitor
+// native, then a real desktop Save As dialog, then an actual mobile-web download, share offered only
+// as a bonus afterward on both of the latter two -- never a clipboard copy as the real save.
 async function exportBackup() {
   const data = JSON.stringify({ app: "cabinet", version: 1, exported: new Date().toISOString(), settings, items: state.items });
   const name = `micollects-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  const P = window.Capacitor && window.Capacitor.Plugins;
-  if (P && P.Filesystem) {
-    try {
-      let savedToDownloads = false;
-      if (P.DownloadsSaver) {
-        try {
-          const base64 = await new Promise((res, rej) => {
-            const r = new FileReader();
-            r.onload = () => res(r.result.split(",")[1]);
-            r.onerror = rej;
-            r.readAsDataURL(new Blob([data], { type: "application/json" }));
-          });
-          await P.DownloadsSaver.saveToDownloads({ data: base64, fileName: name, mimeType: "application/json" });
-          savedToDownloads = true;
-        } catch (e) {}
-      }
-      const r = await P.Filesystem.writeFile({ path: name, data, directory: "CACHE", encoding: "utf8", recursive: true });
-      toast(savedToDownloads ? `Saved ${name} to Downloads` : `Saved ${name}`);
-      if (P.Share) { try { await P.Share.share({ title: "miCollects backup", url: r.uri, dialogTitle: "Share your backup" }); } catch (e) {} }
-      return;
-    } catch (e) { if (/cancel/i.test(String(e && e.message))) return; }
-  }
-  try {
-    const file = new File([data], name, { type: "application/json" });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "miCollects backup" }); return; }
-  } catch (e) { if (e && e.name === "AbortError") return; }
-  try { await navigator.clipboard.writeText(data); toast("Backup copied. Paste it into a note or email to keep it."); return; }
-  catch (e) {}
-  $("#backupOut").innerHTML = `<p class="hint">Copy this text and keep it somewhere safe:</p><textarea class="backup-text" readonly>${esc(data)}</textarea>`;
-  const ta = $("#backupOut textarea"); ta.focus(); ta.select();
+  await shareOrDownload(name, new Blob([data], { type: "application/json" }), "application/json", "miCollects backup");
 }
 
 async function importBackup(e) {
