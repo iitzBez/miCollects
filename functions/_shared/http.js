@@ -16,7 +16,10 @@ export function handlePost(fn) {
       return await fn({ request, env, body });
     } catch (e) {
       const status = e.status || 400;
-      return json({ error: e.message || "Request failed" }, status);
+      // `stack` is only here to make an unexpected (non-deliberate) error locatable while this
+      // feature is still being brought up live -- worth removing once passkeys are stable, since a
+      // stack trace has no business reaching a client in the long run.
+      return json({ error: e.message || "Request failed", stack: String(e.stack || "").split("\n").slice(0, 4) }, status);
     }
   };
 }
