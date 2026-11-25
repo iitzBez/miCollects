@@ -102,6 +102,20 @@ async function fsFetch(env, path, init) {
   });
   return res;
 }
+// runQuery is an RPC on the *documents* collection itself (the collection being queried is named
+// inside the request body's structuredQuery.from, not the URL) -- ".../documents:runQuery", never
+// ".../documents/<collection>:runQuery", which Firestore instead parses as a plain document path and
+// rejects the moment it sees a body that isn't a Document (hence "Unknown name structuredQuery").
+async function fsRunQuery(env, structuredQuery) {
+  const sa = serviceAccount(env);
+  const token = await getAccessToken(env);
+  const res = await fetch(`https://firestore.googleapis.com/v1/projects/${sa.project_id}/databases/(default)/documents:runQuery`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ structuredQuery })
+  });
+  return res;
+}
 
 // Credential IDs arrive from the browser as base64url already, which (unlike plain base64) uses only
 // '-'/'_' in place of '+'/'/' -- exactly the character it'd otherwise collide with Firestore's own
@@ -153,14 +167,9 @@ export async function deletePasskeyCredential(env, credentialIdB64url) {
 
 // Used to build excludeCredentials at registration time -- lists every credential doc for one uid.
 export async function listPasskeyCredentialsForUid(env, uid) {
-  const res = await fsFetch(env, "passkeyCredentials:runQuery", {
-    method: "POST",
-    body: JSON.stringify({
-      structuredQuery: {
-        from: [{ collectionId: "passkeyCredentials" }],
-        where: { fieldFilter: { field: { fieldPath: "uid" }, op: "EQUAL", value: { stringValue: uid } } }
-      }
-    })
+  const res = await fsRunQuery(env, {
+    from: [{ collectionId: "passkeyCredentials" }],
+    where: { fieldFilter: { field: { fieldPath: "uid" }, op: "EQUAL", value: { stringValue: uid } } }
   });
   if (!res.ok) throw new Error("Firestore query failed: " + (await res.text()));
   const rows = await res.json();
