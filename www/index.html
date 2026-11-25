@@ -1351,9 +1351,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.62";
+const APP_VERSION = "1.6.63";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.63", date: "25 Nov 2026", items: [
+    ["Chrome/Edge now proactively offer to save your password after signing in, instead of never showing that prompt at all -- the actual login check happens via a separate Google service the browser couldn't see on its own, so it needed to be told directly. Safari/Firefox don't support this yet, unfortunately."]
+  ] },
   { version: "1.6.62", date: "25 Nov 2026", items: [
     ["Fixed \"Sign out instead\" on the lock screen briefly flashing the signed-in Collection/Wishlist screen before actually signing out."],
     ["With device unlock on, auto-sign-out after inactivity now happens 24 hours after auto-locking, instead of the usual 7 days -- the extra lock step in between means that account can afford a shorter final timeout. Without device unlock, nothing changes."]
@@ -3625,6 +3628,22 @@ document.addEventListener("visibilitychange", () => {
 
 /* ---------- Settings + backup ---------- */
 const isValidEmail = s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+/* Browsers normally decide "offer to save this password?" with their own heuristics (form
+   submitted, then the form disappearing/a navigation as the "it worked" signal) -- but the actual
+   credential check here happens via Firebase Auth's own SDK, which makes its real request to
+   identitytoolkit.googleapis.com, a different origin the browser can't easily tie back to this
+   page's own form submission. That's a well-known gap for Firebase (and similar third-party-auth)
+   sites specifically, not just this one, and it's why the save-password prompt was never appearing
+   at all, on any browser, rather than just "no saved credential yet". The Credential Management
+   API's navigator.credentials.store() is the purpose-built fix: it tells the browser directly,
+   instead of leaving it to guess from a signal it never actually sees. Supported in Chrome/Edge
+   (desktop and Android); Safari and Firefox don't implement it, so this is a no-op there and their
+   own heuristics are all that's left to try. */
+async function offerToSaveCredential(email, pass) {
+  if (typeof PasswordCredential === "undefined" || !navigator.credentials) return;
+  try { await navigator.credentials.store(new PasswordCredential({ id: email, password: pass, name: email })); }
+  catch (e) {}
+}
 
 function authAreaHtml() {
   if (!authMode) {
@@ -3854,6 +3873,7 @@ function openAccount() {
         authHint.textContent = "Working…";
         try {
           await fn(email, pass);
+          offerToSaveCredential(email, pass);
           if (requirePolicy) {
             settings.firstName = properCase(firstName); settings.lastName = properCase(lastName);
             settings.whatsNewSeenVersion = ""; saveSettings(); cloudPushSettings();
@@ -4905,6 +4925,7 @@ function openWelcomeForm(mode) {
     hint.textContent = "Working…";
     try {
       await (mode === "signin" ? cloudSignIn(email, pass) : cloudSignUp(email, pass));
+      offerToSaveCredential(email, pass);
       if (mode === "signup") {
         settings.firstName = properCase(firstName); settings.lastName = properCase(lastName);
         settings.whatsNewSeenVersion = ""; saveSettings(); cloudPushSettings();
