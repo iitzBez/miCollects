@@ -457,6 +457,7 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
 /* Welcome / sign-in splash (first launch only) */
 .welcome{position:fixed;inset:0;z-index:30;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;padding:24px;text-align:center}
 .welcome-logo{font:800 clamp(32px,10vw,44px)/1 var(--display);letter-spacing:-.03em;color:var(--ink);margin:0;animation:wlogo .6s ease-out}
+.bio-icon{width:40px;height:40px;color:var(--brass);margin-bottom:-8px;animation:wlogo .6s ease-out}
 .welcome-version{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);font-size:12px;color:var(--muted);margin:0}
 .welcome-logo span{color:var(--brass)}
 @keyframes wlogo{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
@@ -819,7 +820,7 @@ body.welcome-from-home #welcomeCloseBtn:hover{background:var(--sunk)}
     <button type="button" class="btn primary" id="wSignIn">Sign in</button>
     <button type="button" class="btn ghost" id="wSignUp">Create account</button>
   </div>
-  <div class="welcome-form" id="welcomeForm" hidden>
+  <form class="welcome-form" id="welcomeForm" hidden>
     <h2 id="wfTitle">Sign in</h2>
     <div class="row" id="wfNameRow" hidden>
       <div class="field"><label for="wf-fname">Name</label>
@@ -831,12 +832,26 @@ body.welcome-from-home #welcomeCloseBtn:hover{background:var(--sunk)}
       <input id="wf-email" name="email" type="email" autocomplete="email" placeholder="you@example.com"></div>
     <div class="field"><label for="wf-pass">Password</label>
       <input id="wf-pass" name="password" type="password" autocomplete="current-password" placeholder="Password"></div>
-    <button type="button" class="btn primary" id="wfSubmit">Sign in</button>
+    <button type="submit" class="btn primary" id="wfSubmit">Sign in</button>
     <p class="hint auth-msg" id="wfHint"></p>
     <button type="button" class="link plain" id="wfForgot" hidden>Forgot password?</button>
     <button type="button" class="link plain" id="wfBack">Back</button>
-  </div>
+  </form>
   <p class="welcome-version" id="welcomeVersion"></p>
+</div>
+
+<!-- Local-only "unlock with Face ID / Touch ID / fingerprint" gate for an already-signed-in session
+     on this device (see bioEnabledFor()/showBioUnlock() near hideWelcomeIfOnboarded) -- nothing here
+     is a real auth factor verified by a server, it's just a convenience layer in front of the
+     Firebase session Firebase already restored on its own. Reuses .welcome's exact look. -->
+<div class="welcome" id="bioUnlock" hidden>
+  <svg class="bio-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+  <p class="welcome-logo">mi<span>Collects</span></p>
+  <div class="welcome-choices">
+    <button type="button" class="btn primary" id="bioUnlockBtn">Unlock with Face ID / Fingerprint</button>
+    <p class="hint auth-msg" id="bioUnlockHint"></p>
+    <button type="button" class="link plain" id="bioUnlockSignOutBtn">Sign out instead</button>
+  </div>
 </div>
 
 <!-- Desktop-only sidebar: empty slots here, filled by relocateSidebarForViewport() near the bottom
@@ -1126,6 +1141,25 @@ applyTheme();
    gets the home page too, same as desktop. */
 const isStandaloneShortcut = matchMedia("(display-mode: standalone)").matches ||
   matchMedia("(display-mode: fullscreen)").matches || window.navigator.standalone === true;
+/* "Unlock with Face ID/Touch ID/fingerprint" for an already-signed-in session on this device -- see
+   showBioUnlock()/enableBioUnlock() near showWelcome() for the rest of this. Not a real auth factor
+   (nothing here is verified by a server): it just gates re-revealing a session Firebase itself
+   already restored, same idea as a banking app's "unlock with biometrics" on top of a session token
+   that was never actually re-validated by that gesture. bioAvailable starts false and flips once the
+   (fast, but still async) platform-authenticator check resolves -- by the time anyone could reach
+   the Settings toggle that reads it, it already has. */
+let bioAvailable = false;
+if (window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
+  PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(ok => { bioAvailable = ok; }).catch(() => {});
+}
+let bioUnlocked = false;
+const bioEnabledFor = uid => !!uid && localStorage.getItem("bio-unlock-uid") === uid && !!localStorage.getItem("bio-unlock-cred-id");
+function b64urlToBytes(s) {
+  const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/").padEnd(s.length + (4 - s.length % 4) % 4, "="));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
 /* #welcome defaults to visible in the markup (not [hidden]) so it's the very first thing painted --
    waiting for store.open() etc. to resolve before showing it let the home screen flash underneath
    for a moment on a brand-new install. Hide it immediately, synchronously, if onboarding is already
@@ -1148,10 +1182,16 @@ function hideWelcomeIfOnboarded() {
     // the home page (any browser tab, not the installed shortcut) regardless of settings.onboarded's
     // permanent, unrelated value.
     if (!settings.onboarded && !isStandaloneShortcut) showSiteHome();
+    document.getElementById("bioUnlock").hidden = true;
+    bioUnlocked = false; // reset for next time -- a later sign-in (even the same account) re-gates
     return;
   }
+  // Signed in, but this device has biometric unlock enabled for this exact account and hasn't
+  // proven it yet this session -- gate the reveal behind it instead of going straight to the app.
+  if (!bioUnlocked && bioEnabledFor(cloudUser.uid)) { showBioUnlock(); return; }
   const w = document.getElementById("welcome");
   if (w) w.hidden = true;
+  document.getElementById("bioUnlock").hidden = true;
   document.body.classList.remove("welcome-popup");
   hideSiteHome();
 }
@@ -1270,9 +1310,13 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.57";
+const APP_VERSION = "1.6.58";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.58", date: "25 Nov 2026", items: [
+    ["Added device unlock -- use Face ID, Touch ID or your fingerprint to reopen miCollects, instead of retyping your password every time (Settings > Account). A convenience for this device only, not a replacement for your password."],
+    ["The sign-in/sign-up form now works properly with password managers and Enter-to-submit."]
+  ] },
   { version: "1.6.57", date: "25 Nov 2026", items: [
     ["Added search-engine basics (page description, structured data, sitemap) to make the site easier to find on Google."]
   ] },
@@ -3430,7 +3474,9 @@ function maybeShowWelcome(force) {
     // false, so it falls through to the desktop-home-page branch below like any other sign-out.
     if (forceFullScreenWelcome) {
       forceFullScreenWelcome = false;
-      document.body.classList.remove("welcome-popup"); hideSiteHome(); showWelcome(); return;
+      document.body.classList.remove("welcome-popup"); hideSiteHome();
+      document.getElementById("bioUnlock").hidden = true; bioUnlocked = false;
+      showWelcome(); return;
     }
     if (!isStandaloneShortcut) { showSiteHome(); return; }
     showWelcome();
@@ -3551,6 +3597,10 @@ function accountTabHtml() {
       </div></div>
     <div class="actions"><button class="btn primary" id="acctSaveBtn">Save details</button></div>
     <p class="hint" id="acctHint"></p>
+    ${bioAvailable ? `
+    <h3>Device unlock</h3>
+    <p class="hint">Use Face ID, Touch ID or your fingerprint to reopen miCollects on this device, instead of typing your password again. This doesn't replace your password -- it's just a shortcut on this one device.</p>
+    <div class="actions"><button class="btn ghost" id="bioToggleBtn">${bioEnabledFor(cloudUser.uid) ? "Turn off device unlock" : "Enable device unlock"}</button></div>` : ""}
     <h3>Password</h3>
     <p class="hint">Send a password reset link to ${esc(cloudUser.email)}.</p>
     <div class="actions">
@@ -3653,6 +3703,10 @@ function openAccount() {
     // so refreshSettingsIfOpen() re-opened it the moment the user signed back in, instead of leaving
     // them on the home screen.
     $("#signOutBtn").addEventListener("click", () => { forceWelcomeNext = true; closeSheet(); cloudSignOut(); });
+    const bioToggle = $("#bioToggleBtn");
+    if (bioToggle) bioToggle.addEventListener("click", async () => {
+      if (bioEnabledFor(cloudUser.uid)) disableBioUnlock(); else await enableBioUnlock();
+    });
     $("#avatarBtn").addEventListener("click", async () => {
       const hint = $("#avatarHint");
       const P = window.Capacitor && window.Capacitor.Plugins;
@@ -4624,6 +4678,60 @@ document.addEventListener("touchend", () => {
 });
 document.addEventListener("touchcancel", () => { ptrReset(); ptrStartY = null; ptrActive = false; });
 
+/* ---------- Biometric device unlock (Settings > Account toggle; gates hideWelcomeIfOnboarded's
+   reveal, see there) ---------- */
+function showBioUnlock() {
+  const w = document.getElementById("welcome"); if (w) w.hidden = true;
+  document.body.classList.remove("welcome-popup");
+  hideSiteHome();
+  $("#bioUnlockHint").textContent = "";
+  document.getElementById("bioUnlock").hidden = false;
+}
+async function attemptBioUnlock() {
+  const credId = localStorage.getItem("bio-unlock-cred-id");
+  const btn = $("#bioUnlockBtn"), hint = $("#bioUnlockHint");
+  if (!credId) return;
+  btn.disabled = true; hint.textContent = "";
+  try {
+    await navigator.credentials.get({
+      publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials: [{ id: b64urlToBytes(credId), type: "public-key" }],
+        userVerification: "required", timeout: 60000 }
+    });
+    bioUnlocked = true;
+    hideWelcomeIfOnboarded(); // now passes the gate it just failed, revealing the app for real
+  } catch (e) { hint.textContent = "Couldn’t verify. Try again."; }
+  finally { btn.disabled = false; }
+}
+async function enableBioUnlock() {
+  if (!cloudUser) return;
+  try {
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rp: { name: "miCollects" },
+        user: { id: new TextEncoder().encode(cloudUser.uid), name: cloudUser.email, displayName: cloudUser.email },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+        authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+        timeout: 60000, attestation: "none"
+      }
+    });
+    localStorage.setItem("bio-unlock-uid", cloudUser.uid);
+    localStorage.setItem("bio-unlock-cred-id", cred.id);
+    bioUnlocked = true; // this device just proved it right now -- don't immediately re-prompt
+    toast("Device unlock enabled");
+  } catch (e) { toast("Couldn’t set that up on this device."); }
+  refreshSettingsIfOpen();
+}
+function disableBioUnlock() {
+  localStorage.removeItem("bio-unlock-uid");
+  localStorage.removeItem("bio-unlock-cred-id");
+  toast("Device unlock turned off");
+  refreshSettingsIfOpen();
+}
+$("#bioUnlockBtn").addEventListener("click", attemptBioUnlock);
+$("#bioUnlockSignOutBtn").addEventListener("click", () => { forceWelcomeNext = true; cloudSignOut(); });
+
 /* ---------- Welcome (first launch) ---------- */
 function showWelcome() {
   $("#welcome").hidden = false;
@@ -4665,7 +4773,11 @@ function openWelcomeForm(mode) {
   $("#wfSubmit").textContent = mode === "signin" ? "Sign in" : "Create account";
   $("#wfForgot").hidden = mode !== "signin";
   $("#wfNameRow").hidden = mode !== "signup";
-  $("#wfSubmit").onclick = async () => {
+  // #wfSubmit is type="submit" (a real <form> now, not a div) specifically so this also runs on
+  // Enter in any field, not just a direct click -- assigned to the form's submit event rather than
+  // the button's click event so the two triggers can't ever double-fire against each other.
+  $("#welcomeForm").onsubmit = async e => {
+    e.preventDefault();
     const email = $("#wf-email").value.trim(), pass = $("#wf-pass").value;
     const hint = $("#wfHint");
     let firstName = "", lastName = "";
