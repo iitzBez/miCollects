@@ -1248,9 +1248,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.55";
+const APP_VERSION = "1.6.56";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.56", date: "25 Nov 2026", items: [
+    ["Fixed a theme change made on another device only taking visual effect after a hard refresh or app relaunch, instead of as soon as it synced."]
+  ] },
   { version: "1.6.55", date: "25 Nov 2026", items: [
     ["Export backup now reliably saves a real file (a proper Save As on desktop, a real download on mobile web), instead of sometimes only copying it to the clipboard."],
     ["Removed the redundant \"Open listing\" link under an item's product link field."]
@@ -3197,7 +3200,11 @@ async function cloudPullAll(silent) {
     }
     try {
       const metaDoc = await fbDb.collection("users").doc(syncUid).collection("meta").doc("settings").get();
-      if (metaDoc.exists) { Object.assign(settings, metaDoc.data()); saveSettings(); }
+      // applyTheme() matters here, not just saveSettings() -- without it, a theme change made on
+      // another device landed in settings/localStorage right away, but the CURRENT page kept
+      // rendering whatever data-theme attribute it already had until the next full reload (which is
+      // why it only ever "fixed itself" on a hard refresh or relaunch, never live mid-session).
+      if (metaDoc.exists) { Object.assign(settings, metaDoc.data()); saveSettings(); applyTheme(); }
     } catch (e) {}
     if (!stillCurrent()) return;
     // Only from here on is it safe to push this device's settings -- see cloudSettingsReady's own
