@@ -1200,6 +1200,11 @@ function showSiteHome() {
   if (home) home.hidden = false;
   const w = document.getElementById("welcome");
   if (w) w.hidden = true;
+  // #bioUnlock (z-index 30, same as #welcome) sits on top of everything this reveals underneath it
+  // -- a path that reaches here without having explicitly hidden it first (maybeShowWelcome's
+  // non-forced branches, reached via the bio-unlock screen's own "Sign out instead") left it stuck
+  // on screen looking like nothing had happened, even though the sign-out behind it had gone through.
+  document.getElementById("bioUnlock").hidden = true;
 }
 function hideSiteHome() {
   const home = document.getElementById("siteHome");
@@ -1310,9 +1315,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.59";
+const APP_VERSION = "1.6.60";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.60", date: "25 Nov 2026", items: [
+    ["Fixed \"Sign out instead\" on the device-unlock lock screen appearing to do nothing -- it was actually signing out correctly, just leaving the lock screen itself stuck on top of the result."]
+  ] },
   { version: "1.6.59", date: "25 Nov 2026", items: [
     ["With device unlock on, \"Sign out\" now locks instead of fully signing out -- you'll unlock it again with Face ID/Touch ID/your fingerprint, the same way you log into a banking app. A real sign out (to switch accounts, say) is still there as \"Sign out instead\" on the lock screen."]
   ] },
@@ -4737,7 +4745,13 @@ $("#bioUnlockBtn").addEventListener("click", attemptBioUnlock);
 // This one's always a real sign-out, even with device unlock on -- it's the escape hatch out of the
 // lock screen itself (signOutOrLock() below is what the Done ... Sign out button elsewhere calls,
 // and that's the one that locks instead when device unlock applies).
-$("#bioUnlockSignOutBtn").addEventListener("click", () => { forceWelcomeNext = true; cloudSignOut(); });
+$("#bioUnlockSignOutBtn").addEventListener("click", () => {
+  // Hidden immediately, synchronously -- showSiteHome()/showWelcome() also do this defensively once
+  // onAuthStateChanged actually comes back, but that's a real async round-trip through Firebase, and
+  // leaving the lock screen up until then looked exactly like the click had done nothing at all.
+  document.getElementById("bioUnlock").hidden = true;
+  forceWelcomeNext = true; cloudSignOut();
+});
 /* The normal "Sign out" button (Account, and the sidebar's quick sign-out confirm) -- when this
    device has biometric unlock enabled for the signed-in account, "sign out" now means "lock": the
    Firebase session stays fully intact (nothing about cloudSignOut() runs at all), it just re-shows
@@ -4755,6 +4769,8 @@ function signOutOrLock() {
 /* ---------- Welcome (first launch) ---------- */
 function showWelcome() {
   $("#welcome").hidden = false;
+  // Same reasoning as showSiteHome()'s own line below -- #bioUnlock sits on top of #welcome too.
+  document.getElementById("bioUnlock").hidden = true;
   $("#wSignIn").hidden = $("#wSignUp").hidden = !cloudEnabled;
   // Always reset to the plain choice screen -- this can be called while the sign-in/up form is
   // already open (e.g. a forced sign-out mid-session), and leaving that form up is what let it
