@@ -1095,6 +1095,10 @@ try { Object.assign(settings, JSON.parse(localStorage.getItem("cabinet-settings"
    waiting for Firebase to resolve the restored session first is what caused the home screen to
    flash before redirecting to the sign-in screen on a stale reopen. */
 const INACTIVITY_LIMIT_MS = 7 * 24 * 60 * 60 * 1000; // 7 days of backgrounded/closed inactivity before auto sign-out
+// 1 hour of inactivity with the tab left open (not closed) auto-locks instead -- only meaningful
+// where device unlock is enabled (see the visibilitychange listener near onAuthStateChanged below,
+// and isLocked()'s own comment further down for what "locked" actually means here).
+const LOCK_LIMIT_MS = 60 * 60 * 1000;
 const LAST_ACTIVE_KEY = "mc-last-active";
 function markActive() { try { localStorage.setItem(LAST_ACTIVE_KEY, String(Date.now())); } catch (e) {} }
 function markActiveAndCheckTimeout() {
@@ -1152,8 +1156,16 @@ let bioAvailable = false;
 if (window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
   PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(ok => { bioAvailable = ok; }).catch(() => {});
 }
-let bioUnlocked = false;
 const bioEnabledFor = uid => !!uid && localStorage.getItem("bio-unlock-uid") === uid && !!localStorage.getItem("bio-unlock-cred-id");
+/* "Locked" (needs a biometric check before #welcome/#siteHome gets hidden again) is its own
+   persisted flag, deliberately NOT the same thing as "not yet proven this page load" -- it must
+   survive a reload/reopen so that explicitly locking really does keep demanding biometrics across
+   one, but equally, just reopening the app or the OS's own screen lock turning on/off must NEVER
+   set this on their own. Only two things ever set it: tapping "Lock" (signOutOrLock()) and the
+   1-hour open-tab auto-lock (the visibilitychange listener near onAuthStateChanged). A real
+   password sign-in (finishWelcome()) or a successful biometric check (attemptBioUnlock()) are the
+   only two things that ever clear it. */
+const isLocked = () => !!cloudUser && bioEnabledFor(cloudUser.uid) && localStorage.getItem("bio-locked") === cloudUser.uid;
 function b64urlToBytes(s) {
   const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/").padEnd(s.length + (4 - s.length % 4) % 4, "="));
   const bytes = new Uint8Array(bin.length);
@@ -1183,12 +1195,13 @@ function hideWelcomeIfOnboarded() {
     // permanent, unrelated value.
     if (!settings.onboarded && !isStandaloneShortcut) showSiteHome();
     document.getElementById("bioUnlock").hidden = true;
-    bioUnlocked = false; // reset for next time -- a later sign-in (even the same account) re-gates
     return;
   }
-  // Signed in, but this device has biometric unlock enabled for this exact account and hasn't
-  // proven it yet this session -- gate the reveal behind it instead of going straight to the app.
-  if (!bioUnlocked && bioEnabledFor(cloudUser.uid)) { showBioUnlock(); return; }
+  // Signed in, but this device was explicitly locked for this exact account (Lock button, or the
+  // 1-hour auto-lock) and hasn't been unlocked again yet -- gate the reveal behind that instead of
+  // going straight to the app. Merely reopening the app/tab is NOT itself a lock -- isLocked() only
+  // follows the persisted flag those two things set, see its own comment above.
+  if (isLocked()) { showBioUnlock(); return; }
   const w = document.getElementById("welcome");
   if (w) w.hidden = true;
   document.getElementById("bioUnlock").hidden = true;
@@ -1315,9 +1328,13 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.60";
+const APP_VERSION = "1.6.61";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.61", date: "25 Nov 2026", items: [
+    ["Fixed the Face ID/fingerprint lock screen reappearing just from reopening the app or signing back in -- it's now only shown after actually tapping Lock, or the new 1-hour auto-lock below."],
+    ["Added an auto-lock: with device unlock on, leaving the app open but unused for an hour now locks it, the same as tapping Lock yourself. Without device unlock, nothing changes -- the existing automatic sign-out still applies after its own longer timeout."]
+  ] },
   { version: "1.6.60", date: "25 Nov 2026", items: [
     ["Fixed \"Sign out instead\" on the device-unlock lock screen appearing to do nothing -- it was actually signing out correctly, just leaving the lock screen itself stuck on top of the result."]
   ] },
@@ -3486,7 +3503,7 @@ function maybeShowWelcome(force) {
     if (forceFullScreenWelcome) {
       forceFullScreenWelcome = false;
       document.body.classList.remove("welcome-popup"); hideSiteHome();
-      document.getElementById("bioUnlock").hidden = true; bioUnlocked = false;
+      document.getElementById("bioUnlock").hidden = true;
       showWelcome(); return;
     }
     if (!isStandaloneShortcut) { showSiteHome(); return; }
@@ -3551,6 +3568,30 @@ if (cloudEnabled) {
     forceWelcomeNext = false;
   });
 }
+/* Covers the tab/app being left open (not closed) past either timeout, which nothing else here
+   checks for -- markActiveAndCheckTimeout() above (and the now-retired Capacitor appStateChange
+   listener near PTR) only ever run at a fresh page load. "Returning to a visible tab after it was
+   hidden a while" is the web equivalent of a native app's foreground/background transition, and is
+   the realistic way "left unused for an hour/a week" actually happens for an open site: the phone's
+   screen went off, or another tab/app had focus, not that this one got closed. 7 days always signs
+   out outright, same as the existing startup check; 1 hour only locks, and only where device unlock
+   is actually enabled for the signed-in account -- otherwise neither applies here at all, the tab
+   just keeps running signed in until it either hits the 7-day mark or gets closed and reopened. */
+document.addEventListener("visibilitychange", () => {
+  if (!cloudEnabled || document.visibilityState !== "visible" || !appReady || !cloudUser) return;
+  let last = 0;
+  try { last = +(localStorage.getItem(LAST_ACTIVE_KEY) || 0); } catch (e) {}
+  const elapsed = last ? Date.now() - last : 0;
+  markActive();
+  if (!last) return;
+  if (elapsed > INACTIVITY_LIMIT_MS) {
+    forceWelcomeNext = true; forceFullScreenWelcome = true;
+    fbAuth.signOut().catch(() => {});
+  } else if (elapsed > LOCK_LIMIT_MS && bioEnabledFor(cloudUser.uid)) {
+    localStorage.setItem("bio-locked", cloudUser.uid);
+    showBioUnlock();
+  }
+});
 
 /* ---------- Settings + backup ---------- */
 const isValidEmail = s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
@@ -4710,7 +4751,7 @@ async function attemptBioUnlock() {
         allowCredentials: [{ id: b64urlToBytes(credId), type: "public-key" }],
         userVerification: "required", timeout: 60000 }
     });
-    bioUnlocked = true;
+    localStorage.removeItem("bio-locked");
     hideWelcomeIfOnboarded(); // now passes the gate it just failed, revealing the app for real
   } catch (e) { hint.textContent = "Couldn’t verify. Try again."; }
   finally { btn.disabled = false; }
@@ -4730,7 +4771,6 @@ async function enableBioUnlock() {
     });
     localStorage.setItem("bio-unlock-uid", cloudUser.uid);
     localStorage.setItem("bio-unlock-cred-id", cred.id);
-    bioUnlocked = true; // this device just proved it right now -- don't immediately re-prompt
     toast("Device unlock enabled");
   } catch (e) { toast("Couldn’t set that up on this device."); }
   refreshSettingsIfOpen();
@@ -4738,6 +4778,7 @@ async function enableBioUnlock() {
 function disableBioUnlock() {
   localStorage.removeItem("bio-unlock-uid");
   localStorage.removeItem("bio-unlock-cred-id");
+  localStorage.removeItem("bio-locked");
   toast("Device unlock turned off");
   refreshSettingsIfOpen();
 }
@@ -4762,7 +4803,7 @@ $("#bioUnlockSignOutBtn").addEventListener("click", () => {
    enabled, this is unchanged from before -- a real sign-out straight to the full-screen login. */
 function signOutOrLock() {
   closeSheet();
-  if (bioEnabledFor(cloudUser.uid)) { bioUnlocked = false; showBioUnlock(); return; }
+  if (bioEnabledFor(cloudUser.uid)) { localStorage.setItem("bio-locked", cloudUser.uid); showBioUnlock(); return; }
   forceWelcomeNext = true; cloudSignOut();
 }
 
@@ -4781,6 +4822,11 @@ function showWelcome() {
 }
 function finishWelcome() {
   settings.onboarded = true; saveSettings();
+  // Typing a real password IS a full authentication -- clear any lingering "locked" flag (it
+  // shouldn't normally still be set at this point, but defensively matters if it somehow is) so the
+  // onAuthStateChanged(user) this triggers next doesn't immediately re-show the lock screen on a
+  // session that was just proven by password seconds ago.
+  localStorage.removeItem("bio-locked");
   $("#welcome").hidden = true;
   // Successfully signing in/up isn't a back-navigation -- if openWelcomeFromHome() pushed a history
   // entry for this, replace its state (not history.back(), which would actually navigate) so a
