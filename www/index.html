@@ -13,7 +13,14 @@ if (location.hostname === "micollects.pages.dev") {
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2563EB">
-<title>miCollects</title>
+<title>miCollects – Collection &amp; Wishlist Tracker</title>
+<!-- name="description" is the one Google actually uses for the search-result snippet (and weighs
+     for relevance) -- distinct from og:description below, which only link-preview cards read. -->
+<meta name="description" content="Track your collectibles and wishlist with miCollects. Catalogue your collection, monitor wishlist prices, and add items instantly with photo recognition -- synced across every device you sign into.">
+<meta name="robots" content="index, follow">
+<!-- Canonical to the custom domain -- the pages.dev origin redirects here via the script below, but
+     this is the explicit signal search engines use to avoid treating the two as duplicate content. -->
+<link rel="canonical" href="https://micollects.co.za/">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -29,16 +36,31 @@ if (location.hostname === "micollects.pages.dev") {
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="miCollects">
-<meta property="og:title" content="miCollects">
+<meta property="og:title" content="miCollects – Collection &amp; Wishlist Tracker">
 <meta property="og:description" content="Catalogue your collections, track what you're chasing with real prices, and pick items straight off a photo with image recognition -- synced across every device you sign into.">
 <meta property="og:url" content="https://micollects.co.za">
 <meta property="og:image" content="https://micollects.co.za/favicon.png">
 <meta property="og:image:width" content="1024">
 <meta property="og:image:height" content="1024">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="miCollects">
+<meta name="twitter:title" content="miCollects – Collection &amp; Wishlist Tracker">
 <meta name="twitter:description" content="Catalogue your collections, track what you're chasing with real prices, and pick items straight off a photo with image recognition -- synced across every device you sign into.">
 <meta name="twitter:image" content="https://micollects.co.za/favicon.png">
+<!-- Structured data: lets Google understand what kind of thing this is (a free web app, not an
+     article/product/business), which can surface richer info in search results than a plain blue
+     link -- category, that it's free, etc. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "miCollects",
+  "url": "https://micollects.co.za/",
+  "description": "Track your collectibles and wishlist with miCollects. Catalogue your collection, monitor wishlist prices, and add items instantly with photo recognition -- synced across every device you sign into.",
+  "applicationCategory": "LifestyleApplication",
+  "operatingSystem": "Any",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -1248,9 +1270,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.56";
+const APP_VERSION = "1.6.57";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.57", date: "25 Nov 2026", items: [
+    ["Added search-engine basics (page description, structured data, sitemap) to make the site easier to find on Google."]
+  ] },
   { version: "1.6.56", date: "25 Nov 2026", items: [
     ["Fixed a theme change made on another device only taking visual effect after a hard refresh or app relaunch, instead of as soon as it synced."]
   ] },
