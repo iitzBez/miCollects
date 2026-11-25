@@ -458,6 +458,7 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
 .welcome{position:fixed;inset:0;z-index:30;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;padding:24px;text-align:center}
 .welcome-logo{font:800 clamp(32px,10vw,44px)/1 var(--display);letter-spacing:-.03em;color:var(--ink);margin:0;animation:wlogo .6s ease-out}
 .bio-icon{width:40px;height:40px;color:var(--brass);margin-bottom:-8px;animation:wlogo .6s ease-out}
+.bio-icon-inline{width:18px;height:18px;vertical-align:-4px;margin-right:6px}
 .welcome-version{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);font-size:12px;color:var(--muted);margin:0}
 .welcome-logo span{color:var(--brass)}
 @keyframes wlogo{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
@@ -819,6 +820,8 @@ body.welcome-from-home #welcomeCloseBtn:hover{background:var(--sunk)}
   <div class="welcome-choices" id="welcomeChoices" hidden>
     <button type="button" class="btn primary" id="wSignIn">Sign in</button>
     <button type="button" class="btn ghost" id="wSignUp">Create account</button>
+    <button type="button" class="btn ghost" id="wPasskey" hidden><svg class="bio-icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Sign in with a passkey</button>
+    <p class="hint auth-msg" id="wPasskeyHint"></p>
   </div>
   <form class="welcome-form" id="welcomeForm" hidden>
     <h2 id="wfTitle">Sign in</h2>
@@ -838,20 +841,6 @@ body.welcome-from-home #welcomeCloseBtn:hover{background:var(--sunk)}
     <button type="button" class="link plain" id="wfBack">Back</button>
   </form>
   <p class="welcome-version" id="welcomeVersion"></p>
-</div>
-
-<!-- Local-only "unlock with Face ID / Touch ID / fingerprint" gate for an already-signed-in session
-     on this device (see bioEnabledFor()/showBioUnlock() near hideWelcomeIfOnboarded) -- nothing here
-     is a real auth factor verified by a server, it's just a convenience layer in front of the
-     Firebase session Firebase already restored on its own. Reuses .welcome's exact look. -->
-<div class="welcome" id="bioUnlock" hidden>
-  <svg class="bio-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-  <p class="welcome-logo">mi<span>Collects</span></p>
-  <div class="welcome-choices">
-    <button type="button" class="btn primary" id="bioUnlockBtn">Unlock with Face ID / Fingerprint</button>
-    <p class="hint auth-msg" id="bioUnlockHint"></p>
-    <button type="button" class="link plain" id="bioUnlockSignOutBtn">Sign out instead</button>
-  </div>
 </div>
 
 <!-- Desktop-only sidebar: empty slots here, filled by relocateSidebarForViewport() near the bottom
@@ -1094,33 +1083,19 @@ try { Object.assign(settings, JSON.parse(localStorage.getItem("cabinet-settings"
    here, before first paint, so the #welcome-hiding decision below can account for it immediately --
    waiting for Firebase to resolve the restored session first is what caused the home screen to
    flash before redirecting to the sign-in screen on a stale reopen. */
-// Two completely separate timeout tracks, chosen per device by whether it has biometric unlock
-// enrolled (localStorage's bio-unlock-uid/-cred-id -- known synchronously, before Firebase has even
-// confirmed who's signed in, which matters below). A device with nothing to unlock with has nothing
-// useful to lock either, so it just keeps the original flat sign-out as its only timeout, unchanged:
-const INACTIVITY_LIMIT_MS = 7 * 24 * 60 * 60 * 1000; // no biometric unlock: straight to sign-out after 7 days inactive
-// A device WITH biometric unlock enrolled ignores the figure above entirely and uses this pair
-// instead -- 1 hour inactive locks (gate behind Face ID/Touch ID/fingerprint, see isLocked()
-// further down), and only past 24 hours inactive does it give up on ever being unlocked again and
-// signs out outright, same as the flat case above does for everyone else.
-const LOCK_LIMIT_MS = 60 * 60 * 1000;
-const LOCKED_SIGNOUT_LIMIT_MS = 24 * 60 * 60 * 1000;
+const INACTIVITY_LIMIT_MS = 7 * 24 * 60 * 60 * 1000; // straight to sign-out after 7 days inactive
 const LAST_ACTIVE_KEY = "mc-last-active";
 function markActive() { try { localStorage.setItem(LAST_ACTIVE_KEY, String(Date.now())); } catch (e) {} }
-// Single source of truth for "how long has it really been, and what does that mean" -- shared by the
-// synchronous startup check right below and the visibilitychange listener near onAuthStateChanged
-// (the web equivalent of a foreground/background transition, for a tab that was left open the
-// whole time rather than closed and reopened). Deliberately read-only: callers decide when to
-// actually call markActive() themselves, since the startup check needs to read the OLD timestamp
-// before resetting it.
+// Single source of truth for "how long has it really been" -- shared by the synchronous startup
+// check right below and the visibilitychange listener near onAuthStateChanged (the web equivalent of
+// a foreground/background transition, for a tab that was left open the whole time rather than closed
+// and reopened). Deliberately read-only: callers decide when to actually call markActive() themselves,
+// since the startup check needs to read the OLD timestamp before resetting it.
 function checkInactivity() {
   let last = 0;
   try { last = +(localStorage.getItem(LAST_ACTIVE_KEY) || 0); } catch (e) {}
   const elapsed = last ? Date.now() - last : 0;
-  const deviceHasBio = !!localStorage.getItem("bio-unlock-uid") && !!localStorage.getItem("bio-unlock-cred-id");
-  const signOutLimit = deviceHasBio ? LOCKED_SIGNOUT_LIMIT_MS : INACTIVITY_LIMIT_MS;
-  const signOut = !!last && elapsed > signOutLimit;
-  return { signOut, lock: deviceHasBio && !signOut && !!last && elapsed > LOCK_LIMIT_MS };
+  return { signOut: !!last && elapsed > INACTIVITY_LIMIT_MS };
 }
 function markActiveAndCheckTimeout() {
   const { signOut } = checkInactivity();
@@ -1144,12 +1119,6 @@ function markActiveFromInteraction() {
 }
 document.addEventListener("pointerdown", markActiveFromInteraction, { passive: true });
 document.addEventListener("keydown", markActiveFromInteraction);
-// Checked once here, synchronously, same timing/reasoning as pendingInactivitySignOut's own comment
-// above it (cloudUser isn't known yet, so acting on this is deferred to onAuthStateChanged too --
-// see its own use of pendingInactivityLock there). Read before markActiveAndCheckTimeout() resets
-// the clock below, from the SAME stored timestamp, so this and pendingInactivitySignOut agree with
-// each other about how much time has actually passed.
-let pendingInactivityLock = checkInactivity().lock;
 let pendingInactivitySignOut = markActiveAndCheckTimeout();
 /* "system" means no override: the prefers-color-scheme media query in the CSS takes it from there.
    Applied immediately on load (before first paint) so there's no flash of the wrong theme, and again
@@ -1168,32 +1137,36 @@ applyTheme();
    gets the home page too, same as desktop. */
 const isStandaloneShortcut = matchMedia("(display-mode: standalone)").matches ||
   matchMedia("(display-mode: fullscreen)").matches || window.navigator.standalone === true;
-/* "Unlock with Face ID/Touch ID/fingerprint" for an already-signed-in session on this device -- see
-   showBioUnlock()/enableBioUnlock() near showWelcome() for the rest of this. Not a real auth factor
-   (nothing here is verified by a server): it just gates re-revealing a session Firebase itself
-   already restored, same idea as a banking app's "unlock with biometrics" on top of a session token
-   that was never actually re-validated by that gesture. bioAvailable starts false and flips once the
-   (fast, but still async) platform-authenticator check resolves -- by the time anyone could reach
-   the Settings toggle that reads it, it already has. */
-let bioAvailable = false;
+/* Whether this device can do a passkey at all (Face ID/Touch ID/Windows Hello/fingerprint) -- gates
+   both the "Sign in with a passkey" welcome button and the Account "Add a passkey" option. Starts
+   false and flips once the (fast, but still async) platform-authenticator check resolves -- by the
+   time anyone could reach either of those, it already has. */
+let passkeyAvailable = false;
 if (window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
-  PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(ok => { bioAvailable = ok; }).catch(() => {});
+  PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(ok => {
+    passkeyAvailable = ok;
+    // Patches the welcome screen's passkey button if it resolves after showWelcome() already ran
+    // (normally just a few ms, but #welcome can be the very first thing painted) -- Settings always
+    // reads passkeyAvailable fresh each time it's opened, so it needs no such patch.
+    const w = $("#wPasskey"); if (ok && w) w.hidden = !cloudEnabled;
+  }).catch(() => {});
 }
-const bioEnabledFor = uid => !!uid && localStorage.getItem("bio-unlock-uid") === uid && !!localStorage.getItem("bio-unlock-cred-id");
-/* "Locked" (needs a biometric check before #welcome/#siteHome gets hidden again) is its own
-   persisted flag, deliberately NOT the same thing as "not yet proven this page load" -- it must
-   survive a reload/reopen so that explicitly locking really does keep demanding biometrics across
-   one, but equally, just reopening the app or the OS's own screen lock turning on/off must NEVER
-   set this on their own. Only two things ever set it: tapping "Lock" (signOutOrLock()) and the
-   1-hour open-tab auto-lock (the visibilitychange listener near onAuthStateChanged). A real
-   password sign-in (finishWelcome()) or a successful biometric check (attemptBioUnlock()) are the
-   only two things that ever clear it. */
-const isLocked = () => !!cloudUser && bioEnabledFor(cloudUser.uid) && localStorage.getItem("bio-locked") === cloudUser.uid;
+// Purely a local hint for Settings' button label ("Add a passkey" vs. "Remove this device's passkey")
+// -- the server (passkeyCredentials in Firestore) is the real source of truth for sign-in, so a stale
+// local flag is harmless either way, and a passkey made on a different device correctly still shows
+// "Add a passkey" here (you can have one per device, same as any other passkey-using site).
+const passkeyUidFor = uid => localStorage.getItem("passkey-uid") === uid ? localStorage.getItem("passkey-cred-id") : null;
 function b64urlToBytes(s) {
   const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/").padEnd(s.length + (4 - s.length % 4) % 4, "="));
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
+}
+function bytesToB64url(bytes) {
+  let bin = "";
+  const arr = new Uint8Array(bytes);
+  for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 /* #welcome defaults to visible in the markup (not [hidden]) so it's the very first thing painted --
    waiting for store.open() etc. to resolve before showing it let the home screen flash underneath
@@ -1217,17 +1190,10 @@ function hideWelcomeIfOnboarded() {
     // the home page (any browser tab, not the installed shortcut) regardless of settings.onboarded's
     // permanent, unrelated value.
     if (!settings.onboarded && !isStandaloneShortcut) showSiteHome();
-    document.getElementById("bioUnlock").hidden = true;
     return;
   }
-  // Signed in, but this device was explicitly locked for this exact account (Lock button, or the
-  // 1-hour auto-lock) and hasn't been unlocked again yet -- gate the reveal behind that instead of
-  // going straight to the app. Merely reopening the app/tab is NOT itself a lock -- isLocked() only
-  // follows the persisted flag those two things set, see its own comment above.
-  if (isLocked()) { showBioUnlock(); return; }
   const w = document.getElementById("welcome");
   if (w) w.hidden = true;
-  document.getElementById("bioUnlock").hidden = true;
   document.body.classList.remove("welcome-popup");
   hideSiteHome();
 }
@@ -1236,11 +1202,6 @@ function showSiteHome() {
   if (home) home.hidden = false;
   const w = document.getElementById("welcome");
   if (w) w.hidden = true;
-  // #bioUnlock (z-index 30, same as #welcome) sits on top of everything this reveals underneath it
-  // -- a path that reaches here without having explicitly hidden it first (maybeShowWelcome's
-  // non-forced branches, reached via the bio-unlock screen's own "Sign out instead") left it stuck
-  // on screen looking like nothing had happened, even though the sign-out behind it had gone through.
-  document.getElementById("bioUnlock").hidden = true;
 }
 function hideSiteHome() {
   const home = document.getElementById("siteHome");
@@ -1351,9 +1312,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.63";
+const APP_VERSION = "1.6.64";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.64", date: "25 Nov 2026", items: [
+    ["Replaced device unlock with real passkey sign-in: tap \"Sign in with a passkey\" on the login screen to sign in with Face ID, Touch ID, Windows Hello or your fingerprint -- a genuine sign-in, verified by the server, not just a lock screen on top of an existing session. Add a passkey per device from Settings > Account; there's no more \"Lock\", \"Sign out\" always fully signs out now."]
+  ] },
   { version: "1.6.63", date: "25 Nov 2026", items: [
     ["Chrome/Edge now proactively offer to save your password after signing in, instead of never showing that prompt at all -- the actual login check happens via a separate Google service the browser couldn't see on its own, so it needed to be told directly. Safari/Firefox don't support this yet, unfortunately."]
   ] },
@@ -3533,7 +3497,6 @@ function maybeShowWelcome(force) {
     if (forceFullScreenWelcome) {
       forceFullScreenWelcome = false;
       document.body.classList.remove("welcome-popup"); hideSiteHome();
-      document.getElementById("bioUnlock").hidden = true;
       showWelcome(); return;
     }
     if (!isStandaloneShortcut) { showSiteHome(); return; }
@@ -3591,13 +3554,6 @@ if (cloudEnabled) {
     if (appReady && user) cloudPullAll(true);
     refreshSettingsIfOpen();
     if (!authResolvedOnce) { authResolvedOnce = true; if (user) { settings.onboarded = true; saveSettings(); } }
-    // Same deferred-until-user-is-known reasoning as pendingInactivitySignOut -- reopening the app
-    // itself past the 1-hour mark (not just an already-open tab regaining visibility, see the
-    // visibilitychange listener below) should also lock, not just a resumed-but-never-closed tab.
-    if (user && pendingInactivityLock) {
-      pendingInactivityLock = false;
-      if (bioEnabledFor(user.uid)) localStorage.setItem("bio-locked", user.uid);
-    }
     // The startup hold (see pendingInactivitySignOut above) is resolved now -- hide #welcome, unless
     // we're about to force it open right below, which would just flash it hidden then shown again.
     if (!forceWelcomeNext) hideWelcomeIfOnboarded();
@@ -3605,24 +3561,19 @@ if (cloudEnabled) {
     forceWelcomeNext = false;
   });
 }
-/* Covers the tab/app being left open (not closed) past either timeout, which nothing else here
-   checks for -- markActiveAndCheckTimeout() above (and the now-retired Capacitor appStateChange
-   listener near PTR) only ever run at a fresh page load. "Returning to a visible tab after it was
-   hidden a while" is the web equivalent of a native app's foreground/background transition, and is
-   the realistic way "left unused for an hour/a day" actually happens for an open site: the phone's
-   screen went off, or another tab/app had focus, not that this one got closed. checkInactivity()
-   picks the right pair of thresholds for this device (see its own comment) -- signOut always wins
-   outright over lock if somehow both apply, same precedence the startup check already uses. */
+/* Covers the tab/app being left open (not closed) past the timeout, which nothing else here checks
+   for -- markActiveAndCheckTimeout() above (and the now-retired Capacitor appStateChange listener
+   near PTR) only ever run at a fresh page load. "Returning to a visible tab after it was hidden a
+   while" is the web equivalent of a native app's foreground/background transition, and is the
+   realistic way "left unused for a week" actually happens for an open site: the phone's screen went
+   off, or another tab/app had focus, not that this one got closed. */
 document.addEventListener("visibilitychange", () => {
   if (!cloudEnabled || document.visibilityState !== "visible" || !appReady || !cloudUser) return;
-  const { signOut, lock } = checkInactivity();
+  const { signOut } = checkInactivity();
   markActive();
   if (signOut) {
     forceWelcomeNext = true; forceFullScreenWelcome = true;
     fbAuth.signOut().catch(() => {});
-  } else if (lock) {
-    localStorage.setItem("bio-locked", cloudUser.uid);
-    showBioUnlock();
   }
 });
 
@@ -3698,15 +3649,16 @@ function accountTabHtml() {
       </div></div>
     <div class="actions"><button class="btn primary" id="acctSaveBtn">Save details</button></div>
     <p class="hint" id="acctHint"></p>
-    ${bioAvailable ? `
-    <h3>Device unlock</h3>
-    <p class="hint">Use Face ID, Touch ID or your fingerprint to reopen miCollects on this device, instead of typing your password again. This doesn't replace your password -- it's just a shortcut on this one device.</p>
-    <div class="actions"><button class="btn ghost" id="bioToggleBtn">${bioEnabledFor(cloudUser.uid) ? "Turn off device unlock" : "Enable device unlock"}</button></div>` : ""}
+    ${passkeyAvailable ? `
+    <h3>Passkey</h3>
+    <p class="hint">Sign in with Face ID, Touch ID, Windows Hello or your fingerprint instead of typing your password. A passkey is tied to this device -- add one on each device you want to use it on.</p>
+    <div class="actions"><button class="btn ghost" id="passkeyToggleBtn">${passkeyUidFor(cloudUser.uid) ? "Remove this device's passkey" : "Add a passkey on this device"}</button></div>
+    <p class="hint" id="passkeyHint"></p>` : ""}
     <h3>Password</h3>
     <p class="hint">Send a password reset link to ${esc(cloudUser.email)}.</p>
     <div class="actions">
       <button class="btn ghost" id="acctResetBtn">Reset password</button>
-      <button class="btn danger" id="signOutBtn">${bioEnabledFor(cloudUser.uid) ? "Lock" : "Sign out"}</button>
+      <button class="btn danger" id="signOutBtn">Sign out</button>
     </div>
     <p class="hint" id="acctResetHint"></p>`;
 }
@@ -3803,10 +3755,10 @@ function openAccount() {
     // matters too: without it this Account sheet stays open (just hidden under the welcome overlay),
     // so refreshSettingsIfOpen() re-opened it the moment the user signed back in, instead of leaving
     // them on the home screen.
-    $("#signOutBtn").addEventListener("click", signOutOrLock);
-    const bioToggle = $("#bioToggleBtn");
-    if (bioToggle) bioToggle.addEventListener("click", async () => {
-      if (bioEnabledFor(cloudUser.uid)) disableBioUnlock(); else await enableBioUnlock();
+    $("#signOutBtn").addEventListener("click", doSignOut);
+    const passkeyToggle = $("#passkeyToggleBtn");
+    if (passkeyToggle) passkeyToggle.addEventListener("click", async () => {
+      if (passkeyUidFor(cloudUser.uid)) await removePasskeyOnThisDevice(); else await enrollPasskey();
     });
     $("#avatarBtn").addEventListener("click", async () => {
       const hint = $("#avatarHint");
@@ -4689,21 +4641,18 @@ $("#sideAcctRow").addEventListener("click", e => {
 // forceWelcomeNext/closeSheet()/cloudSignOut() sequence Account's own signOutBtn uses either way.
 $("#sideSignOutBtn").addEventListener("click", openSignOutConfirm);
 function openSignOutConfirm() {
-  // Wording follows signOutOrLock()'s own branch -- with device unlock on, this button doesn't
-  // actually sign out (see there), so it shouldn't say it does.
-  const locking = bioEnabledFor(cloudUser.uid);
   $("#sheet").classList.add("confirm-sheet");
   $("#sheetBody").innerHTML = `
     <div class="confirm-body">
-      <h2 id="sheetTitle">${locking ? "Lock" : "Sign out"}</h2>
-      <p class="hint">${locking ? "Lock miCollects? You'll unlock it again with Face ID/Touch ID/your fingerprint." : "Sign out of miCollects?"}</p>
+      <h2 id="sheetTitle">Sign out</h2>
+      <p class="hint">Sign out of miCollects?</p>
       <div class="actions">
         <button type="button" class="btn ghost" id="signOutCancelBtn">Cancel</button>
-        <button type="button" class="btn danger" id="signOutConfirmBtn">${locking ? "Lock" : "Sign out"}</button>
+        <button type="button" class="btn danger" id="signOutConfirmBtn">Sign out</button>
       </div>
     </div>`;
   $("#signOutCancelBtn").addEventListener("click", closeSheet);
-  $("#signOutConfirmBtn").addEventListener("click", signOutOrLock);
+  $("#signOutConfirmBtn").addEventListener("click", doSignOut);
   showSheet();
 }
 
@@ -4781,90 +4730,118 @@ document.addEventListener("touchend", () => {
 });
 document.addEventListener("touchcancel", () => { ptrReset(); ptrStartY = null; ptrActive = false; });
 
-/* ---------- Biometric device unlock (Settings > Account toggle; gates hideWelcomeIfOnboarded's
-   reveal, see there) ---------- */
-function showBioUnlock() {
-  const w = document.getElementById("welcome"); if (w) w.hidden = true;
-  document.body.classList.remove("welcome-popup");
-  hideSiteHome();
-  $("#bioUnlockHint").textContent = "";
-  document.getElementById("bioUnlock").hidden = false;
-}
-async function attemptBioUnlock() {
-  const credId = localStorage.getItem("bio-unlock-cred-id");
-  const btn = $("#bioUnlockBtn"), hint = $("#bioUnlockHint");
-  if (!credId) return;
-  btn.disabled = true; hint.textContent = "";
+/* ---------- Passkey sign-in (welcome screen) + enrollment (Account settings) ----------
+   A real second sign-in method, not a local gate: passkey-auth-verify (a Cloudflare Pages Function,
+   see functions/api/passkey-*.js) verifies the WebAuthn assertion server-side and mints an actual
+   Firebase custom token, which signInWithCustomToken() below exchanges for a full session -- so this
+   is a genuine sign-in/sign-out, same as email+password, not a gate in front of one. */
+async function signInWithPasskey() {
+  const btn = $("#wPasskey"), hint = $("#wPasskeyHint");
+  btn.disabled = true; hint.textContent = "Verifying…";
   try {
-    await navigator.credentials.get({
-      publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)),
-        allowCredentials: [{ id: b64urlToBytes(credId), type: "public-key" }],
-        userVerification: "required", timeout: 60000 }
-    });
-    localStorage.removeItem("bio-locked");
-    hideWelcomeIfOnboarded(); // now passes the gate it just failed, revealing the app for real
-  } catch (e) { hint.textContent = "Couldn’t verify. Try again."; }
-  finally { btn.disabled = false; }
-}
-async function enableBioUnlock() {
-  if (!cloudUser) return;
-  try {
-    const cred = await navigator.credentials.create({
+    const optRes = await fetch("/api/passkey-auth-options", { method: "POST" });
+    if (!optRes.ok) throw new Error((await optRes.json().catch(() => ({}))).error || "Couldn't start passkey sign-in");
+    const { options, challengeToken } = await optRes.json();
+    const assertion = await navigator.credentials.get({
       publicKey: {
-        challenge: crypto.getRandomValues(new Uint8Array(32)),
-        rp: { name: "miCollects" },
-        user: { id: new TextEncoder().encode(cloudUser.uid), name: cloudUser.email, displayName: cloudUser.email },
-        pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
-        authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
-        timeout: 60000, attestation: "none"
+        ...options,
+        challenge: b64urlToBytes(options.challenge),
+        allowCredentials: (options.allowCredentials || []).map(c => ({ ...c, id: b64urlToBytes(c.id) }))
       }
     });
-    localStorage.setItem("bio-unlock-uid", cloudUser.uid);
-    localStorage.setItem("bio-unlock-cred-id", cred.id);
-    toast("Device unlock enabled");
-  } catch (e) { toast("Couldn’t set that up on this device."); }
+    const response = {
+      id: assertion.id,
+      rawId: bytesToB64url(assertion.rawId),
+      type: assertion.type,
+      response: {
+        clientDataJSON: bytesToB64url(assertion.response.clientDataJSON),
+        authenticatorData: bytesToB64url(assertion.response.authenticatorData),
+        signature: bytesToB64url(assertion.response.signature),
+        userHandle: assertion.response.userHandle ? bytesToB64url(assertion.response.userHandle) : undefined
+      },
+      clientExtensionResults: assertion.getClientExtensionResults ? assertion.getClientExtensionResults() : {}
+    };
+    const verifyRes = await fetch("/api/passkey-auth-verify", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ response, challengeToken })
+    });
+    if (!verifyRes.ok) throw new Error((await verifyRes.json().catch(() => ({}))).error || "Couldn't verify that passkey");
+    const { token } = await verifyRes.json();
+    await fbAuth.signInWithCustomToken(token);
+    finishWelcome();
+  } catch (e) {
+    hint.textContent = e.name === "NotAllowedError" ? "Cancelled." : (e.message || "Couldn’t sign in with that passkey.");
+  } finally { btn.disabled = false; }
+}
+async function enrollPasskey() {
+  if (!cloudUser) return;
+  const hint = $("#passkeyHint");
+  if (hint) hint.textContent = "";
+  try {
+    const idToken = await cloudUser.getIdToken();
+    const optRes = await fetch("/api/passkey-reg-options", { method: "POST", headers: { authorization: "Bearer " + idToken } });
+    if (!optRes.ok) throw new Error((await optRes.json().catch(() => ({}))).error || "Couldn't start enrollment");
+    const { options, challengeToken } = await optRes.json();
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        ...options,
+        challenge: b64urlToBytes(options.challenge),
+        user: { ...options.user, id: b64urlToBytes(options.user.id) },
+        excludeCredentials: (options.excludeCredentials || []).map(c => ({ ...c, id: b64urlToBytes(c.id) }))
+      }
+    });
+    const response = {
+      id: cred.id,
+      rawId: bytesToB64url(cred.rawId),
+      type: cred.type,
+      response: {
+        clientDataJSON: bytesToB64url(cred.response.clientDataJSON),
+        attestationObject: bytesToB64url(cred.response.attestationObject),
+        transports: cred.response.getTransports ? cred.response.getTransports() : []
+      },
+      clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {}
+    };
+    const verifyRes = await fetch("/api/passkey-reg-verify", {
+      method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + idToken },
+      body: JSON.stringify({ response, challengeToken })
+    });
+    if (!verifyRes.ok) throw new Error((await verifyRes.json().catch(() => ({}))).error || "Couldn't save that passkey");
+    localStorage.setItem("passkey-uid", cloudUser.uid);
+    localStorage.setItem("passkey-cred-id", response.id);
+    toast("Passkey added");
+  } catch (e) {
+    toast(e.name === "NotAllowedError" ? "Cancelled." : "Couldn’t set up a passkey on this device.");
+  }
   refreshSettingsIfOpen();
 }
-function disableBioUnlock() {
-  localStorage.removeItem("bio-unlock-uid");
-  localStorage.removeItem("bio-unlock-cred-id");
-  localStorage.removeItem("bio-locked");
-  toast("Device unlock turned off");
+async function removePasskeyOnThisDevice() {
+  if (!cloudUser) return;
+  const credentialId = passkeyUidFor(cloudUser.uid);
+  if (!credentialId) return;
+  try {
+    const idToken = await cloudUser.getIdToken();
+    await fetch("/api/passkey-remove", {
+      method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + idToken },
+      body: JSON.stringify({ credentialId })
+    });
+  } catch (e) {}
+  localStorage.removeItem("passkey-uid");
+  localStorage.removeItem("passkey-cred-id");
+  toast("Passkey removed");
   refreshSettingsIfOpen();
 }
-$("#bioUnlockBtn").addEventListener("click", attemptBioUnlock);
-// This one's always a real sign-out, even with device unlock on -- it's the escape hatch out of the
-// lock screen itself (signOutOrLock() below is what the Done ... Sign out button elsewhere calls,
-// and that's the one that locks instead when device unlock applies).
-$("#bioUnlockSignOutBtn").addEventListener("click", () => {
-  // Replaced immediately, synchronously, with whatever a real sign-out will land on anyway (the
-  // same choice maybeShowWelcome() makes once onAuthStateChanged(null) actually comes back) --
-  // merely hiding #bioUnlock here left the real app's Collection/Wishlist grid exposed underneath
-  // it (it was never actually hidden, just covered by this overlay) for that whole async gap, which
-  // showed as a flash of the signed-in app before the sign-out had actually gone through.
-  if (!isStandaloneShortcut) showSiteHome(); else showWelcome();
-  forceWelcomeNext = true; cloudSignOut();
-});
-/* The normal "Sign out" button (Account, and the sidebar's quick sign-out confirm) -- when this
-   device has biometric unlock enabled for the signed-in account, "sign out" now means "lock": the
-   Firebase session stays fully intact (nothing about cloudSignOut() runs at all), it just re-shows
-   the fingerprint/Face ID screen, matching what most people actually expect "sign out" to do once a
-   device unlock is set up (a banking app's own "lock"/"log out" distinction is the same idea).
-   #bioUnlockSignOutBtn right above is still there as a real full sign-out when one's actually
-   needed (switching accounts, handing the device to someone else, ...). Without device unlock
-   enabled, this is unchanged from before -- a real sign-out straight to the full-screen login. */
-function signOutOrLock() {
+$("#wPasskey").addEventListener("click", signInWithPasskey);
+function doSignOut() {
   closeSheet();
-  if (bioEnabledFor(cloudUser.uid)) { localStorage.setItem("bio-locked", cloudUser.uid); showBioUnlock(); return; }
   forceWelcomeNext = true; cloudSignOut();
 }
 
 /* ---------- Welcome (first launch) ---------- */
 function showWelcome() {
   $("#welcome").hidden = false;
-  // Same reasoning as showSiteHome()'s own line below -- #bioUnlock sits on top of #welcome too.
-  document.getElementById("bioUnlock").hidden = true;
   $("#wSignIn").hidden = $("#wSignUp").hidden = !cloudEnabled;
+  $("#wPasskey").hidden = !cloudEnabled || !passkeyAvailable;
+  $("#wPasskeyHint").textContent = "";
   // Always reset to the plain choice screen -- this can be called while the sign-in/up form is
   // already open (e.g. a forced sign-out mid-session), and leaving that form up is what let it
   // show stacked underneath the choices instead of being replaced by them.
@@ -4874,11 +4851,6 @@ function showWelcome() {
 }
 function finishWelcome() {
   settings.onboarded = true; saveSettings();
-  // Typing a real password IS a full authentication -- clear any lingering "locked" flag (it
-  // shouldn't normally still be set at this point, but defensively matters if it somehow is) so the
-  // onAuthStateChanged(user) this triggers next doesn't immediately re-show the lock screen on a
-  // session that was just proven by password seconds ago.
-  localStorage.removeItem("bio-locked");
   $("#welcome").hidden = true;
   // Successfully signing in/up isn't a back-navigation -- if openWelcomeFromHome() pushed a history
   // entry for this, replace its state (not history.back(), which would actually navigate) so a
