@@ -459,6 +459,13 @@ input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:non
 .welcome-logo{font:800 clamp(32px,10vw,44px)/1 var(--display);letter-spacing:-.03em;color:var(--ink);margin:0;animation:wlogo .6s ease-out}
 .bio-icon{width:40px;height:40px;color:var(--brass);margin-bottom:-8px;animation:wlogo .6s ease-out}
 .bio-icon-inline{width:18px;height:18px;vertical-align:-4px;margin-right:6px}
+.welcome-biometric{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:10px}
+.btn-fingerprint{position:relative;width:68px;height:68px;margin:0;border-radius:50%;border:2px solid var(--line);background:var(--surface);color:var(--brass);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.btn-fingerprint:active{transform:scale(.95)}
+.btn-fingerprint:disabled{opacity:.6;cursor:default}
+.fingerprint-icon{width:32px;height:32px}
+.fingerprint-pulse{position:absolute;inset:-6px;border-radius:50%;border:2px solid var(--brass);opacity:0;animation:fp-pulse 2.4s ease-out infinite}
+@keyframes fp-pulse{0%{opacity:.55;transform:scale(.85)}70%{opacity:0;transform:scale(1.18)}100%{opacity:0;transform:scale(1.18)}}
 .welcome-version{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);font-size:12px;color:var(--muted);margin:0}
 .welcome-logo span{color:var(--brass)}
 @keyframes wlogo{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
@@ -823,6 +830,23 @@ body.welcome-from-home #welcomeCloseBtn:hover{background:var(--sunk)}
     <button type="button" class="btn ghost" id="wPasskey" hidden><svg class="bio-icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Sign in with a passkey</button>
     <p class="hint auth-msg" id="wPasskeyHint"></p>
   </div>
+  <div class="welcome-biometric" id="welcomeBiometric" hidden>
+    <button type="button" class="btn-fingerprint" id="wBiometric" aria-label="Log in with biometrics">
+      <span class="fingerprint-pulse" aria-hidden="true"></span>
+      <svg class="fingerprint-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+        <path d="M12 3C7 3 3 7 3 12"/>
+        <path d="M12 3c2.5 0 4.8 1 6.4 2.7"/>
+        <path d="M20.5 9c.3 1 .5 2 .5 3"/>
+        <path d="M21 15.5c-.2.9-.5 1.7-.9 2.5"/>
+        <path d="M6 20c-1.2-1.4-2.1-3-2.6-4.8"/>
+        <path d="M12 7a5 5 0 0 0-5 5c0 4-1 7-2.5 9"/>
+        <path d="M12 7a5 5 0 0 1 5 5c0 1.8.2 3.4.5 4.8"/>
+        <path d="M12 11a1 1 0 0 0-1 1c0 3.5-.6 6.2-1.8 8.3"/>
+        <path d="M12 11a1 1 0 0 1 1 1c0 2 .2 3.8.6 5.3"/>
+      </svg>
+    </button>
+    <p class="hint auth-msg" id="wBiometricHint"></p>
+  </div>
   <form class="welcome-form" id="welcomeForm" hidden>
     <h2 id="wfTitle">Sign in</h2>
     <div class="row" id="wfNameRow" hidden>
@@ -1137,18 +1161,29 @@ applyTheme();
    gets the home page too, same as desktop. */
 const isStandaloneShortcut = matchMedia("(display-mode: standalone)").matches ||
   matchMedia("(display-mode: fullscreen)").matches || window.navigator.standalone === true;
-/* Whether this device can do a passkey at all (Face ID/Touch ID/Windows Hello/fingerprint) -- gates
-   both the "Sign in with a passkey" welcome button and the Account "Add a passkey" option. Starts
+/* True for an actual Android/iOS device, regardless of window width or orientation -- unlike
+   desktopQuery (a viewport breakpoint), this is about the OS, since Android/iOS get the "biometrics"
+   framing (an icon, PIN/pattern fallback expected) no matter how the browser window is sized, and
+   desktop keeps the "passkey" framing even in a narrow window. iPadOS 13+ reports a desktop Safari
+   user agent by default, so it's told apart from a real Mac the usual way: desktop Macs don't have
+   more than one simultaneous touch point. */
+const isMobileOS = /Android/i.test(navigator.userAgent) || /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+/* Whether this device can do a passkey/biometric sign-in at all -- gates the welcome screen's
+   passkey button (desktop) or fingerprint button (mobile), and the Account enrollment option. Starts
    false and flips once the (fast, but still async) platform-authenticator check resolves -- by the
    time anyone could reach either of those, it already has. */
 let passkeyAvailable = false;
 if (window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
   PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(ok => {
     passkeyAvailable = ok;
-    // Patches the welcome screen's passkey button if it resolves after showWelcome() already ran
-    // (normally just a few ms, but #welcome can be the very first thing painted) -- Settings always
-    // reads passkeyAvailable fresh each time it's opened, so it needs no such patch.
-    const w = $("#wPasskey"); if (ok && w) w.hidden = !cloudEnabled;
+    // Patches the welcome screen's button if this resolves after showWelcome() already ran (normally
+    // just a few ms, but #welcome can be the very first thing painted) -- Settings always reads
+    // passkeyAvailable fresh each time it's opened, so it needs no such patch.
+    if (!ok || !cloudEnabled) return;
+    const w = $("#wPasskey"), bw = $("#welcomeBiometric");
+    if (w) w.hidden = isMobileOS;
+    if (bw && isMobileOS) bw.hidden = false;
   }).catch(() => {});
 }
 // Purely a local hint for Settings' button label ("Add a passkey" vs. "Remove this device's passkey")
@@ -1156,6 +1191,7 @@ if (window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAut
 // local flag is harmless either way, and a passkey made on a different device correctly still shows
 // "Add a passkey" here (you can have one per device, same as any other passkey-using site).
 const passkeyUidFor = uid => localStorage.getItem("passkey-uid") === uid ? localStorage.getItem("passkey-cred-id") : null;
+const biometricEligible = () => cloudEnabled && passkeyAvailable && isMobileOS;
 function b64urlToBytes(s) {
   const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/").padEnd(s.length + (4 - s.length % 4) % 4, "="));
   const bytes = new Uint8Array(bin.length);
@@ -1312,9 +1348,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.64";
+const APP_VERSION = "1.6.65";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.65", date: "25 Nov 2026", items: [
+    ["On Android and iOS, passkey sign-in is now framed as \"biometric login\" -- an animated fingerprint button on the login screen, \"Enable log in with biometrics\" in Settings > Account. Same real sign-in underneath (fingerprint, face, PIN or pattern), just no mention of \"passkey\" on mobile. Desktop is unchanged."]
+  ] },
   { version: "1.6.64", date: "25 Nov 2026", items: [
     ["Replaced device unlock with real passkey sign-in: tap \"Sign in with a passkey\" on the login screen to sign in with Face ID, Touch ID, Windows Hello or your fingerprint -- a genuine sign-in, verified by the server, not just a lock screen on top of an existing session. Add a passkey per device from Settings > Account; there's no more \"Lock\", \"Sign out\" always fully signs out now."]
   ] },
@@ -3649,11 +3688,15 @@ function accountTabHtml() {
       </div></div>
     <div class="actions"><button class="btn primary" id="acctSaveBtn">Save details</button></div>
     <p class="hint" id="acctHint"></p>
-    ${passkeyAvailable ? `
+    ${passkeyAvailable ? (isMobileOS ? `
+    <h3>Biometric login</h3>
+    <p class="hint">Log in with your fingerprint, face, PIN or pattern instead of typing your password. Set up separately on each device.</p>
+    <div class="actions"><button class="btn ghost" id="passkeyToggleBtn">${passkeyUidFor(cloudUser.uid) ? "Turn off biometric login" : "Enable log in with biometrics"}</button></div>
+    <p class="hint" id="passkeyHint"></p>` : `
     <h3>Passkey</h3>
     <p class="hint">Sign in with Face ID, Touch ID, Windows Hello or your fingerprint instead of typing your password. A passkey is tied to this device -- add one on each device you want to use it on.</p>
     <div class="actions"><button class="btn ghost" id="passkeyToggleBtn">${passkeyUidFor(cloudUser.uid) ? "Remove this device's passkey" : "Add a passkey on this device"}</button></div>
-    <p class="hint" id="passkeyHint"></p>` : ""}
+    <p class="hint" id="passkeyHint"></p>`) : ""}
     <h3>Password</h3>
     <p class="hint">Send a password reset link to ${esc(cloudUser.email)}.</p>
     <div class="actions">
@@ -4735,8 +4778,8 @@ document.addEventListener("touchcancel", () => { ptrReset(); ptrStartY = null; p
    see functions/api/passkey-*.js) verifies the WebAuthn assertion server-side and mints an actual
    Firebase custom token, which signInWithCustomToken() below exchanges for a full session -- so this
    is a genuine sign-in/sign-out, same as email+password, not a gate in front of one. */
-async function signInWithPasskey() {
-  const btn = $("#wPasskey"), hint = $("#wPasskeyHint");
+async function signInWithPasskey(btnSel, hintSel) {
+  const btn = $(btnSel), hint = $(hintSel);
   btn.disabled = true; hint.textContent = "Verifying…";
   try {
     const optRes = await fetch("/api/passkey-auth-options", { method: "POST" });
@@ -4770,9 +4813,10 @@ async function signInWithPasskey() {
     await fbAuth.signInWithCustomToken(token);
     finishWelcome();
   } catch (e) {
-    hint.textContent = e.name === "NotAllowedError" ? "Cancelled." : (e.message || "Couldn’t sign in with that passkey.");
+    hint.textContent = e.name === "NotAllowedError" ? "Cancelled." : (e.message || `Couldn’t sign in with ${biometricLabel()}.`);
   } finally { btn.disabled = false; }
 }
+const biometricLabel = () => isMobileOS ? "biometrics" : "a passkey";
 async function enrollPasskey() {
   if (!cloudUser) return;
   const hint = $("#passkeyHint");
@@ -4808,9 +4852,9 @@ async function enrollPasskey() {
     if (!verifyRes.ok) throw new Error((await verifyRes.json().catch(() => ({}))).error || "Couldn't save that passkey");
     localStorage.setItem("passkey-uid", cloudUser.uid);
     localStorage.setItem("passkey-cred-id", response.id);
-    toast("Passkey added");
+    toast(isMobileOS ? "Biometric login enabled" : "Passkey added");
   } catch (e) {
-    toast(e.name === "NotAllowedError" ? "Cancelled." : "Couldn’t set up a passkey on this device.");
+    toast(e.name === "NotAllowedError" ? "Cancelled." : `Couldn’t set up ${biometricLabel()} on this device.`);
   }
   refreshSettingsIfOpen();
 }
@@ -4827,10 +4871,11 @@ async function removePasskeyOnThisDevice() {
   } catch (e) {}
   localStorage.removeItem("passkey-uid");
   localStorage.removeItem("passkey-cred-id");
-  toast("Passkey removed");
+  toast(isMobileOS ? "Biometric login turned off" : "Passkey removed");
   refreshSettingsIfOpen();
 }
-$("#wPasskey").addEventListener("click", signInWithPasskey);
+$("#wPasskey").addEventListener("click", () => signInWithPasskey("#wPasskey", "#wPasskeyHint"));
+$("#wBiometric").addEventListener("click", () => signInWithPasskey("#wBiometric", "#wBiometricHint"));
 function doSignOut() {
   closeSheet();
   forceWelcomeNext = true; cloudSignOut();
@@ -4840,14 +4885,19 @@ function doSignOut() {
 function showWelcome() {
   $("#welcome").hidden = false;
   $("#wSignIn").hidden = $("#wSignUp").hidden = !cloudEnabled;
-  $("#wPasskey").hidden = !cloudEnabled || !passkeyAvailable;
+  $("#wPasskey").hidden = !cloudEnabled || !passkeyAvailable || isMobileOS;
+  $("#welcomeBiometric").hidden = true; // revealed below, alongside the choices, once eligible
   $("#wPasskeyHint").textContent = "";
+  $("#wBiometricHint").textContent = "";
   // Always reset to the plain choice screen -- this can be called while the sign-in/up form is
   // already open (e.g. a forced sign-out mid-session), and leaving that form up is what let it
   // show stacked underneath the choices instead of being replaced by them.
   $("#welcomeForm").hidden = true;
   $("#wfHint").textContent = "";
-  setTimeout(() => { $("#welcomeChoices").hidden = false; }, 1000);
+  setTimeout(() => {
+    $("#welcomeChoices").hidden = false;
+    if (biometricEligible()) $("#welcomeBiometric").hidden = false;
+  }, 1000);
 }
 function finishWelcome() {
   settings.onboarded = true; saveSettings();
@@ -4865,6 +4915,7 @@ $("#wSignUp").addEventListener("click", () => openWelcomeForm("signup"));
 $("#wfBack").addEventListener("click", () => {
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   $("#welcomeForm").hidden = true; $("#welcomeChoices").hidden = false;
+  if (biometricEligible()) $("#welcomeBiometric").hidden = false;
 });
 function openWelcomeForm(mode) {
   /* Blur whatever's focused (the Sign in/Create account button just tapped) before hiding it --
@@ -4873,6 +4924,7 @@ function openWelcomeForm(mode) {
      and a second tap is what actually focuses it. */
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   $("#welcomeChoices").hidden = true;
+  $("#welcomeBiometric").hidden = true;
   $("#welcomeForm").hidden = false;
   $("#wfHint").textContent = "";
   $("#wfTitle").textContent = mode === "signin" ? "Sign in" : "Create account";
