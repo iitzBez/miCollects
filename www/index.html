@@ -1310,9 +1310,12 @@ const COUNTRY_CODES = [
 ].map(([iso, code, name]) => [iso, code, flagEmoji(iso), name]);
 
 /* Newest first. Add a new entry here (bump the version) with every feature/fix that ships. */
-const APP_VERSION = "1.6.58";
+const APP_VERSION = "1.6.59";
 $("#welcomeVersion").textContent = `miCollects v${APP_VERSION}`;
 const WHATS_NEW = [
+  { version: "1.6.59", date: "25 Nov 2026", items: [
+    ["With device unlock on, \"Sign out\" now locks instead of fully signing out -- you'll unlock it again with Face ID/Touch ID/your fingerprint, the same way you log into a banking app. A real sign out (to switch accounts, say) is still there as \"Sign out instead\" on the lock screen."]
+  ] },
   { version: "1.6.58", date: "25 Nov 2026", items: [
     ["Added device unlock -- use Face ID, Touch ID or your fingerprint to reopen miCollects, instead of retyping your password every time (Settings > Account). A convenience for this device only, not a replacement for your password."],
     ["The sign-in/sign-up form now works properly with password managers and Enter-to-submit."]
@@ -3605,7 +3608,7 @@ function accountTabHtml() {
     <p class="hint">Send a password reset link to ${esc(cloudUser.email)}.</p>
     <div class="actions">
       <button class="btn ghost" id="acctResetBtn">Reset password</button>
-      <button class="btn danger" id="signOutBtn">Sign out</button>
+      <button class="btn danger" id="signOutBtn">${bioEnabledFor(cloudUser.uid) ? "Lock" : "Sign out"}</button>
     </div>
     <p class="hint" id="acctResetHint"></p>`;
 }
@@ -3702,7 +3705,7 @@ function openAccount() {
     // matters too: without it this Account sheet stays open (just hidden under the welcome overlay),
     // so refreshSettingsIfOpen() re-opened it the moment the user signed back in, instead of leaving
     // them on the home screen.
-    $("#signOutBtn").addEventListener("click", () => { forceWelcomeNext = true; closeSheet(); cloudSignOut(); });
+    $("#signOutBtn").addEventListener("click", signOutOrLock);
     const bioToggle = $("#bioToggleBtn");
     if (bioToggle) bioToggle.addEventListener("click", async () => {
       if (bioEnabledFor(cloudUser.uid)) disableBioUnlock(); else await enableBioUnlock();
@@ -4587,20 +4590,21 @@ $("#sideAcctRow").addEventListener("click", e => {
 // forceWelcomeNext/closeSheet()/cloudSignOut() sequence Account's own signOutBtn uses either way.
 $("#sideSignOutBtn").addEventListener("click", openSignOutConfirm);
 function openSignOutConfirm() {
+  // Wording follows signOutOrLock()'s own branch -- with device unlock on, this button doesn't
+  // actually sign out (see there), so it shouldn't say it does.
+  const locking = bioEnabledFor(cloudUser.uid);
   $("#sheet").classList.add("confirm-sheet");
   $("#sheetBody").innerHTML = `
     <div class="confirm-body">
-      <h2 id="sheetTitle">Sign out</h2>
-      <p class="hint">Sign out of miCollects?</p>
+      <h2 id="sheetTitle">${locking ? "Lock" : "Sign out"}</h2>
+      <p class="hint">${locking ? "Lock miCollects? You'll unlock it again with Face ID/Touch ID/your fingerprint." : "Sign out of miCollects?"}</p>
       <div class="actions">
         <button type="button" class="btn ghost" id="signOutCancelBtn">Cancel</button>
-        <button type="button" class="btn danger" id="signOutConfirmBtn">Sign out</button>
+        <button type="button" class="btn danger" id="signOutConfirmBtn">${locking ? "Lock" : "Sign out"}</button>
       </div>
     </div>`;
   $("#signOutCancelBtn").addEventListener("click", closeSheet);
-  $("#signOutConfirmBtn").addEventListener("click", () => {
-    forceWelcomeNext = true; closeSheet(); cloudSignOut();
-  });
+  $("#signOutConfirmBtn").addEventListener("click", signOutOrLock);
   showSheet();
 }
 
@@ -4730,7 +4734,23 @@ function disableBioUnlock() {
   refreshSettingsIfOpen();
 }
 $("#bioUnlockBtn").addEventListener("click", attemptBioUnlock);
+// This one's always a real sign-out, even with device unlock on -- it's the escape hatch out of the
+// lock screen itself (signOutOrLock() below is what the Done ... Sign out button elsewhere calls,
+// and that's the one that locks instead when device unlock applies).
 $("#bioUnlockSignOutBtn").addEventListener("click", () => { forceWelcomeNext = true; cloudSignOut(); });
+/* The normal "Sign out" button (Account, and the sidebar's quick sign-out confirm) -- when this
+   device has biometric unlock enabled for the signed-in account, "sign out" now means "lock": the
+   Firebase session stays fully intact (nothing about cloudSignOut() runs at all), it just re-shows
+   the fingerprint/Face ID screen, matching what most people actually expect "sign out" to do once a
+   device unlock is set up (a banking app's own "lock"/"log out" distinction is the same idea).
+   #bioUnlockSignOutBtn right above is still there as a real full sign-out when one's actually
+   needed (switching accounts, handing the device to someone else, ...). Without device unlock
+   enabled, this is unchanged from before -- a real sign-out straight to the full-screen login. */
+function signOutOrLock() {
+  closeSheet();
+  if (bioEnabledFor(cloudUser.uid)) { bioUnlocked = false; showBioUnlock(); return; }
+  forceWelcomeNext = true; cloudSignOut();
+}
 
 /* ---------- Welcome (first launch) ---------- */
 function showWelcome() {
